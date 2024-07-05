@@ -1,62 +1,30 @@
+//----------------------All Imports--------------------
 require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
-const mysql = require('mysql2');
 const http = require('http');
 const socketIo = require('socket.io');
-const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
+
+const cloudinary = require('./config/cloudinaryConfig');
+const db = require('./config/dbConnection');
+const setupQueries = require('./components/queries');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const port = 3000;
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
+//----------------APP SETUP-----------------
+const port = 3000;
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-cloudinary.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_KEY,
-  api_secret: process.env.CLOUDINARY_SECRET
-});
-
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-const db = mysql.createConnection({
-  host: process.env.MYSQLHOST,
-  user: process.env.MYSQLUSER,
-  password: process.env.MYSQLPASSWORD,
-  database: process.env.MYSQLDATABASE,
-  port: process.env.MYSQLPORT,
-  multipleStatements: true
-});
-
-const setupQueries = `
-  CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    gender VARCHAR(50),
-    bio VARCHAR(250),
-    date_of_birth DATE,
-    likes JSON,
-    latitude DECIMAL(9,6),
-    longitude DECIMAL(9,6),
-    contact VARCHAR(50) UNIQUE NOT NULL,
-    profile_pic_url VARCHAR(255),
-    avatar_url VARCHAR(255),
-    profile_images JSON,
-    document_url VARCHAR(255),
-    education VARCHAR(255),
-    status ENUM('ACTIVE', 'NON_ACTIVE') DEFAULT 'ACTIVE',
-    subscribed BOOLEAN DEFAULT false,
-    subscription_expiry DATE
-);
-`;
-
+//-----------------DB Connection being made-----------------
 db.connect((err) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
@@ -75,6 +43,8 @@ db.connect((err) => {
     });
   });
 });
+
+//------------------------------HELPER FUNCTIONS-------------------------
 
 // Haversine formula to calculate distance between two points in KM
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -117,6 +87,7 @@ const validateSignup = (req, res, next) => {
   next();
 };
 
+//---------------------Message handling-----------------
 io.on('connection', (socket) => {
   console.log('New client connected');
 
@@ -138,6 +109,9 @@ io.on('connection', (socket) => {
   });
 });
 
+//----------------------------All Implemented APIs--------------------------
+
+//Get Messages API
 app.get('/get-messages', (req, res) => {
   const { app_id, user1, user2 } = req.query;
   const query = `
@@ -156,7 +130,7 @@ app.get('/get-messages', (req, res) => {
 });
 
 
-// API to create a new user
+//Users SignUp API
 app.post('/users/signup', upload.fields([
     { name: 'profile_pic', maxCount: 1 },
     { name: 'avatar_image', maxCount: 1 },
@@ -314,15 +288,3 @@ app.delete('/deleteAllData/:tableName', (req, res) => {
 app.get('/', (req, res) => {
   res.send('Hello, world!');
 });
-// Haversine formula to calculate distance between two points in KM
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radius of the Earth in kilometers
-  const dLat = (lat2 - lat1) * Math.PI / 180; // Convert degrees to radians
-  const dLon = (lon2 - lon1) * Math.PI / 180; // Convert degrees to radians
-  const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in kilometers
-}
