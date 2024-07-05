@@ -230,8 +230,11 @@ app.get('/users/exists/:contact', (req, res) => {
       return res.status(404).json({ status: false, message: 'User does not exist', user: null });
     }
 
-    const user = result[0];
-
+    let user = result[0];
+    
+    user.longitude=parseFloat(user.longitude);
+    user.latitude=parseFloat(user.latitude);
+    
     res.status(200).json({ status: true, message: 'User exists', user });
   });
 });
@@ -331,7 +334,7 @@ app.post('/users/signup', upload.fields([
       gender: gender,
       bio: bio,
       date_of_birth: dob,
-      likes: JSON.stringify(interestsList), // Save as a JSON string in the database
+      likes: interestsList, // Save as a JSON string in the database
       latitude: parseFloat(latitude), // Convert latitude to float
       longitude: parseFloat(longitude), // Convert longitude to float
       profile_pic_url: profilePicUrl,
@@ -411,9 +414,15 @@ app.post('/users/signup', upload.fields([
  *             schema:
  *               type: object
  */
-app.put('/users/editUser/:id', (req, res) => {
-  // Implementation for editing a user
-
+app.put('/users/editUser/:id',   upload.fields([
+  { name: 'profile_pic', maxCount: 1 },
+  { name: 'avatar_image', maxCount: 1 },
+  { name: 'profile_images', maxCount: 10 }]), (req, res) => {
+  
+    // Implementation for editing a user
+  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
+  const interestsList = interests.split(','); // Convert interests to an array
+ 
 });
 
 // DELETE APIs
