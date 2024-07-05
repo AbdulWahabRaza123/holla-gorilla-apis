@@ -25,7 +25,8 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+app.use('/api-docs', express.static('node-modules/swagger-ui-dist/',
+  {index: false}), swaggerUi.serve, swaggerUi.setup(specs));
 
 // DB Connection
 db.connect((err) => {
