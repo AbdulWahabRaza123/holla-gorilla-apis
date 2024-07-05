@@ -1,3 +1,5 @@
+const cloudinary = require('./config/cloudinaryConfig');
+
 // Haversine formula to calculate distance between two points in KM
 function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // Radius of the Earth in kilometers

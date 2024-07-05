@@ -6,8 +6,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const multer = require('multer');
 
-const cloudinary = require('./config/cloudinaryConfig');
-// const { specs, swaggerUi } = require('./config/swagger');
+const { specs, swaggerUi } = require('./config/swagger');
 
 const db = require('./config/dbConnection');
 const setupQueries = require('./components/queries');
@@ -26,7 +25,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve Swagger UI
-// app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // DB Connection
 db.connect((err) => {
