@@ -150,8 +150,9 @@ app.get('/users', (req, res) => {
       return res.status(500).json({ status: false, message: err.message, users: null });
     }
 
-    const users = result.map(user => {
-
+    let users = result.map(user => {
+      user.longitude = parseFloat(user.longitude);
+      user.latitude = parseFloat(user.latitude);
       return user;
     });
 
@@ -414,17 +415,100 @@ app.post('/users/signup', upload.fields([
  *             schema:
  *               type: object
  */
+/*
 app.put('/users/editUser/:id',   upload.fields([
   { name: 'profile_pic', maxCount: 1 },
   { name: 'avatar_image', maxCount: 1 },
-  { name: 'profile_images', maxCount: 10 }]), (req, res) => {
-  
+  { name: 'profile_images', maxCount: 10 }]), async (req, res) => {
+    
+  const id = req.params.id;
     // Implementation for editing a user
-  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
-  const interestsList = interests.split(','); // Convert interests to an array
- 
-});
+  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req?.body;
+  const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
 
+
+  const uploadPromises = [];
+
+  // Upload profile picture if present
+  if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
+    uploadPromises.push(uploadToCloudinary(req.files['profile_pic'][0], 'profile_pics'));
+  }
+
+  // Upload avatar image if present
+  if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
+    uploadPromises.push(uploadToCloudinary(req.files['avatar_image'][0], 'avatar_images'));
+  }
+
+  // Upload profile images if present
+  if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
+    req.files['profile_images'].forEach(file => {
+      uploadPromises.push(uploadToCloudinary(file, 'profile_images'));
+    });
+  }
+
+  try {
+    // Wait for all uploads to complete
+    const uploadedFiles = await Promise.all(uploadPromises);
+  }
+  catch(e){
+    return res.send("Error Faced while Uploading Images: ", e);
+  }
+
+  //base query
+  let query = 'SELECT * FROM users WHERE id !=? ';
+  let queryParams = [];
+  queryParams.push(id);
+
+  console.log(queryParams);
+  
+  let updates = [];
+
+  if (name) {
+      updates.push('name = ?');
+      queryParams.push(name[0]);
+  }
+  if (dob) {
+      updates.push('dob = ?');
+      queryParams.push(dob[0]);
+  }
+  if (bio) {
+      updates.push('bio = ?');
+      queryParams.push(bio[0]);
+  }
+  if (contact) {
+      updates.push('contact = ?');
+      queryParams.push(contact[0]);
+  }
+  if (gender) {
+      updates.push('gender = ?');
+      queryParams.push(gender[0]);
+  }
+  if (education) {
+      updates.push('education = ?');
+      queryParams.push(education[0]);
+  }
+  // If there are no fields to update, return an error
+  if (updates.length === 0) {
+      return res.status(400).send('No fields to update');
+  }
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  queryParams.push(userId);
+  // Execute the query
+  db.run(query, queryParams, function (err) {
+      if (err) {
+          return res.status(500).send(err.message);
+      }
+      // Check if any rows were affected
+      if (this.changes === 0) {
+          return res.status(404).send('User not found');
+      }
+      res.status(200).send('User updated successfully');
+  });
+
+  // console.log(name, contact, education, );
+
+});
+*/
 // DELETE APIs
 /**
  * @swagger
