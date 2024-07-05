@@ -314,7 +314,7 @@ app.post('/users/signup', upload.fields([
   { name: 'document_url', maxCount: 1 }
 ]), validateSignup, async (req, res) => {
   const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
-  const interestsList = JSON.stringify(interests.split(','));
+  const interestsList = interests.split(','); // Convert interests to an array
 
   try {
     const profilePicUrl = req.files.profile_pic ? await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics') : null;
@@ -331,12 +331,12 @@ app.post('/users/signup', upload.fields([
       gender: gender,
       bio: bio,
       date_of_birth: dob,
-      likes: interestsList,
-      latitude: latitude,
-      longitude: longitude,
+      likes: JSON.stringify(interestsList), // Save as a JSON string in the database
+      latitude: parseFloat(latitude), // Convert latitude to float
+      longitude: parseFloat(longitude), // Convert longitude to float
       profile_pic_url: profilePicUrl,
       avatar_url: avatarImageUrl,
-      profile_images: JSON.stringify(profileImageUrls),
+      profile_images: JSON.stringify(profileImageUrls), // Save as a JSON string in the database
       document_url: documentURl,
       education: education,
       status: 'ACTIVE',
@@ -351,13 +351,19 @@ app.post('/users/signup', upload.fields([
       res.status(201).json({
         status: true,
         message: 'User signed up successfully',
-        user: { id: result.insertId, ...user, profile_images: profileImageUrls }
+        user: { 
+          id: result.insertId, 
+          ...user, 
+          likes: interestsList, // Return interests as an array
+          profile_images: profileImageUrls // Return profile_images as an array
+        }
       });
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message, user: null });
   }
 });
+
 
 // PUT APIs
 /**
@@ -407,6 +413,7 @@ app.post('/users/signup', upload.fields([
  */
 app.put('/users/editUser/:id', (req, res) => {
   // Implementation for editing a user
+
 });
 
 // DELETE APIs
