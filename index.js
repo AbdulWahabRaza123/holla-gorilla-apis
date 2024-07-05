@@ -1,4 +1,3 @@
-//----------------------All Imports--------------------
 require('dotenv').config();
 
 const express = require('express');
@@ -20,14 +19,16 @@ const io = socketIo(server);
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-//----------------APP SETUP-----------------
+// APP SETUP
 const port = 3000;
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Serve Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
-//-----------------DB Connection being made-----------------
+// DB Connection
 db.connect((err) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
@@ -47,10 +48,10 @@ db.connect((err) => {
   });
 });
 
-//------------------------------HELPER FUNCTIONS-------------------------
+// Helper functions
 const { calculateDistance, uploadToCloudinary, validateSignup } = require('./utils');
 
-//---------------------Message handling-----------------
+// Message handling
 io.on('connection', (socket) => {
   console.log('New client connected');
 
@@ -72,12 +73,9 @@ io.on('connection', (socket) => {
   });
 });
 
-//----------------------------All Implemented APIs--------------------------
+// All Implemented APIs
 
-//--------------- G E T  A P I s -----------------
-
-//Get Messages API
-
+// GET APIs
 /**
  * @swagger
  * /get-messages:
@@ -161,8 +159,7 @@ app.get('/users', (req, res) => {
   });
 });
 
-//Getting User by ID API
-
+// Getting User by ID API
 /**
  * @swagger
  * /users/id/{id}:
@@ -206,7 +203,7 @@ app.get('/users/id/:id', (req, res) => {
  * /users/exists/{contact}:
  *   get:
  *     summary: Check if user exists by contact
-*     tags: [Users]
+ *     tags: [Users]
  *     parameters:
  *       - in: path
  *         name: contact
@@ -239,13 +236,25 @@ app.get('/users/exists/:contact', (req, res) => {
   });
 });
 
-//Default API
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Default API
+ *     tags: [Default]
+ *     responses:
+ *       200:
+ *         description: A welcome message
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ */
 app.get('/', (req, res) => {
   res.send('Hello, world!');
 });
 
-//---------------- P O S T   A P I s ------------
-
+// POST APIs
 /**
  * @swagger
  * /users/signup:
@@ -350,8 +359,7 @@ app.post('/users/signup', upload.fields([
   }
 });
 
-//---------------- P U T   A P I s -------------
-
+// PUT APIs
 /**
  * @swagger
  * /users/editUser/{id}:
@@ -398,18 +406,16 @@ app.post('/users/signup', upload.fields([
  *               type: object
  */
 app.put('/users/editUser/:id', (req, res) => {
-
+  // Implementation for editing a user
 });
 
-
-
-//---------------- D E L E T E   A P I s -------------
+// DELETE APIs
 /**
  * @swagger
  * /dropTable/{tableName}:
  *   delete:
  *     summary: Drop a table
- *     tags: [Users]
+ *     tags: [Database]
  *     parameters:
  *       - in: path
  *         name: tableName
@@ -442,7 +448,7 @@ app.delete('/dropTable/:tableName', (req, res) => {
  * /deleteAllData/{tableName}:
  *   delete:
  *     summary: Delete all data from a table
- *     tags: [Users]
+ *     tags: [Database]
  *     parameters:
  *       - in: path
  *         name: tableName
