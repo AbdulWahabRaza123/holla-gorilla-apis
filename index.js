@@ -718,9 +718,9 @@ app.put('/users/editUser/:id', upload.fields([
     // Fetch and return the updated user entity
     db.query('SELECT * FROM users WHERE id = ?', [id], (err, rows) => {
       if (err) {
-        return res.status(500).send(err.message);
+        return res.status(500).json({status:false, error: err.message});
       }
-      res.status(200).json(rows[0]);
+      res.status(200).json({status: true, user: rows[0]});
     });
   });
 });
