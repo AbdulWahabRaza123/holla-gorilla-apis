@@ -478,100 +478,103 @@ app.post('/users/signup', upload.fields([
 app.put('/users/editUser/:id', upload.fields([
   { name: 'profile_pic', maxCount: 1 },
   { name: 'avatar_image', maxCount: 1 },
-  { name: 'profile_images', maxCount: 10 }]), async (req, res) => {
+  { name: 'profile_images', maxCount: 10 }
+]), async (req, res) => {
 
-    const id = req.params.id;
-    // Implementation for editing a user
-    const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
-    const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
+  const id = req.params.id;
+  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
+  const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
 
-    // Collect the fields to update
-    let updates = [];
-    let queryParams = [];
-   
-    if (name) {
-      updates.push('full_name = ?');
-      queryParams.push(name);
-    }
-    if (contact) {
-      updates.push('contact = ?');
-      queryParams.push(contact);
-    }
-    if (dob) {
-      updates.push('date_of_birth = ?');
-      queryParams.push(dob);
-    }
-    if (bio) {
-      updates.push('bio = ?');
-      queryParams.push(bio);
-    }
-    if (contact) {
-      updates.push('contact = ?');
-      queryParams.push(contact);
-    }
-    if (gender) {
-      updates.push('gender = ?');
-      queryParams.push(gender);
-    }
-    if (education) {
-      updates.push('education = ?');
-      queryParams.push(education);
-    }
-    if (interests) {
-      updates.push('likes = ?');
-      queryParams.push(interestsList);
-    }
-    if (longitude) {
-      updates.push('longitude = ?');
-      queryParams.push(longitude);
-    }
-    if (latitude) {
-      updates.push('latitude = ?');
-      queryParams.push(latitude);
+  // Collect the fields to update
+  let updates = [];
+  let queryParams = [];
+
+  if (name) {
+    updates.push('full_name = ?');
+    queryParams.push(name);
+  }
+  if (contact) {
+    updates.push('contact = ?');
+    queryParams.push(contact);
+  }
+  if (dob) {
+    updates.push('date_of_birth = ?');
+    queryParams.push(dob);
+  }
+  if (bio) {
+    updates.push('bio = ?');
+    queryParams.push(bio);
+  }
+  if (gender) {
+    updates.push('gender = ?');
+    queryParams.push(gender);
+  }
+  if (education) {
+    updates.push('education = ?');
+    queryParams.push(education);
+  }
+  if (interests) {
+    updates.push('likes = ?');
+    queryParams.push(interestsList.join(',')); // Convert back to string for storage
+  }
+  if (longitude) {
+    updates.push('longitude = ?');
+    queryParams.push(longitude);
+  }
+  if (latitude) {
+    updates.push('latitude = ?');
+    queryParams.push(latitude);
+  }
+
+  if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
+    const profilePicUrl = await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics');
+    updates.push('profile_pic_url = ?');
+    queryParams.push(profilePicUrl);
+  }
+
+  if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
+    const avatarImageUrl = await uploadToCloudinary(req.files.avatar_image[0], 'avatar_images');
+    updates.push('avatar_url = ?');
+    queryParams.push(avatarImageUrl);
+  }
+
+  if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
+    const profileImageUrls = await Promise.all(
+      req.files.profile_images.map(file => uploadToCloudinary(file, 'profile_images'))
+    );
+
+    updates.push('profile_images = ?');
+    queryParams.push(JSON.stringify(profileImageUrls)); // Store as JSON string
+  }
+
+  // If there are no fields to update, return a specific message
+  if (updates.length === 0) {
+    return res.status(200).json({ status: false, message: 'Nothing to update' });
+  }
+
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  queryParams.push(id);
+
+  // Execute the query
+  db.query(query, queryParams, function (err, result) {
+    if (err) {
+      return res.status(500).send(err.message);
     }
 
-    if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
-      const profilePicUrl = await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics');
-      updates.push('profile_pic_url=?');
-      queryParams.push(profilePicUrl);
+    // Check if any rows were affected
+    if (result.affectedRows === 0) {
+      return res.status(404).send('User not found');
     }
 
-    if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
-      const avatarImageUrl = await uploadToCloudinary(req.files.avatar_image[0], 'avatar_images');
-      updates.push(avatar_url);
-      queryParams.push(avatarImageUrl);
-    }
-
-    if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
-      const profileImageUrls = await Promise.all(
-        req.files.profile_images.map(file => uploadToCloudinary(file, 'profile_images'))
-      )
-
-      updates.push('profile_images=?');
-      queryParams.push(profileImageUrls);
-    }
-
-      // If there are no fields to update, return an error
-      if (updates.length === 0) {
-        return res.status(400).send('No fields to update');
+    // Fetch and return the updated user entity
+    db.query('SELECT * FROM users WHERE id = ?', [id], (err, rows) => {
+      if (err) {
+        return res.status(500).send(err.message);
       }
-
-      console.log(updates.length);
-      const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-      queryParams.push(id);
-      // Execute the query
-      db.query(query, queryParams, function (err) {
-        if (err) {
-          return res.status(500).send(err.message);
-        }
-        // Check if any rows were affected
-        if (this.changes === 0) {
-          return res.status(404).send('User not found');
-        }
-        res.status(200).send('User updated successfully');
-      });
-
+      res.status(200).json(rows[0]);
+    });
   });
+});
 
 
 // DELETE APIs
