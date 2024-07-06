@@ -572,12 +572,14 @@ app.put('/users/editUser/:id', upload.fields([
       });
 
   });
+
+
 // DELETE APIs
 /**
  * @swagger
  * /dropTable/{tableName}:
  *   delete:
- *     summary: Drop a table
+ *     summary: Drop a specific table
  *     tags: [Database]
  *     parameters:
  *       - in: path
@@ -585,7 +587,7 @@ app.put('/users/editUser/:id', upload.fields([
  *         schema:
  *           type: string
  *         required: true
- *         description: The table name
+ *         description: The name of the table to drop
  *     responses:
  *       200:
  *         description: Table dropped successfully
@@ -593,18 +595,104 @@ app.put('/users/editUser/:id', upload.fields([
  *           application/json:
  *             schema:
  *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
  */
-app.delete('/dropTable/:tableName', (req, res) => {
+/**
+ * @swagger
+ * /dropTable:
+ *   delete:
+ *     summary: Drop all tables
+ *     tags: [Database]
+ *     responses:
+ *       200:
+ *         description: All tables dropped successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ */
+app.delete('/dropTable/:tableName?', (req, res) => {
   const { tableName } = req.params;
-  const dropTableQuery = `DROP TABLE IF EXISTS \`${tableName}\``;
 
-  db.query(dropTableQuery, (err, result) => {
-    if (err) {
-      return res.status(500).json({ status: false, message: err.message });
-    }
-    res.status(200).json({ status: true, message: `Table ${tableName} dropped successfully` });
-  });
+  if (tableName) {
+    // Drop a specific table
+    const dropTableQuery = `DROP TABLE IF EXISTS \`${tableName}\``;
+
+    db.query(dropTableQuery, (err, result) => {
+      if (err) {
+        if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
+          return res.status(400).json({ status: false, message: `Cannot drop table '${tableName}' referenced by a foreign key constraint.` });
+        }
+        return res.status(500).json({ status: false, message: err.message });
+      }
+      res.status(200).json({ status: true, message: `Table ${tableName} dropped successfully` });
+    });
+  } else {
+    // Drop all tables
+    const getAllTablesQuery = `SHOW TABLES`;
+
+    db.query(getAllTablesQuery, (err, tables) => {
+      if (err) {
+        return res.status(500).json({ status: false, message: err.message });
+      }
+
+      const dropTablePromises = tables.map(table => {
+        const tableName = table[`Tables_in_${db.config.database}`];
+        const dropTableQuery = `DROP TABLE IF EXISTS \`${tableName}\``;
+
+        return new Promise((resolve, reject) => {
+          db.query(dropTableQuery, (err, result) => {
+            if (err) {
+              if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
+                resolve(`Cannot drop table '${tableName}' referenced by a foreign key constraint.`);
+              } else {
+                reject(err);
+              }
+            } else {
+              resolve(`Table ${tableName} dropped successfully`);
+            }
+          });
+        });
+      });
+
+      Promise.all(dropTablePromises)
+        .then(messages => res.status(200).json({ status: true, message: messages.join(', ') }))
+        .catch(err => res.status(500).json({ status: false, message: err.message }));
+    });
+  }
 });
+
 
 /**
  * @swagger
