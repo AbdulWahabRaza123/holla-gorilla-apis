@@ -26,7 +26,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve Swagger UI
 app.use('/api-docs', express.static('node-modules/swagger-ui-dist/',
-  {index: false}), swaggerUi.serve, swaggerUi.setup(specs));
+  { index: false }), swaggerUi.serve, swaggerUi.setup(specs));
 
 // DB Connection
 db.connect((err) => {
@@ -232,10 +232,10 @@ app.get('/users/exists/:contact', (req, res) => {
     }
 
     let user = result[0];
-    
-    user.longitude=parseFloat(user.longitude);
-    user.latitude=parseFloat(user.latitude);
-    
+
+    user.longitude = parseFloat(user.longitude);
+    user.latitude = parseFloat(user.latitude);
+
     res.status(200).json({ status: true, message: 'User exists', user });
   });
 });
@@ -256,6 +256,65 @@ app.get('/users/exists/:contact', (req, res) => {
  */
 app.get('/', (req, res) => {
   res.send('Hello, world!');
+});
+
+//searching based on filter, filters to be passed as parameters
+app.get('/users/getUsers', async (req, res) => {
+  //const id = req.params.id;
+  const { id, longitude, latitude, gender, ageRange, interests, radRange } = req?.query;
+
+  console.log(gender);
+  // Start with a base query
+  let query = 'SELECT * FROM users WHERE id != ? ';
+  let queryParams = [];
+  queryParams.push(id);
+
+  // Handle gender filter
+  if (gender) {
+    console.log('Gender was passed');
+    const genderArr = gender.split(',');
+    query += ' AND (' + genderArr.map(_ => 'gender LIKE ?').join(' OR ') + ')';
+    queryParams = queryParams.concat(genderArr.map(gender => `%${gender}%`));
+  }
+
+  // Handle age range filter
+  if (ageRange) {
+    const [minAge, maxAge] = ageRange.split('-').map(Number);
+    const minDob = new Date(new Date().setFullYear(new Date().getFullYear() - maxAge));
+    const maxDob = new Date(new Date().setFullYear(new Date().getFullYear() - minAge));
+    query += ' AND dob BETWEEN ? AND ?';
+    queryParams.push(minDob.toISOString(), maxDob.toISOString());
+  }
+
+  // Handle interests filter
+  if (interests) {
+    const interestsArray = interests.split(',');
+    query += ' AND (' + interestsArray.map(_ => 'likes LIKE ?').join(' OR ') + ')';
+    queryParams = queryParams.concat(interestsArray.map(interest => `%${interest}%`));
+  }
+
+  // Execute the query
+  console.log(query);
+
+    db.query(query, queryParams, (err, rows) => {
+    if (err) {
+      return res.status(500).send(err.message);
+    }
+
+    // If latitude, longitude, and radRange are provided, filter by distance range
+    if (latitude && longitude && radRange) {
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+      const [minRange, maxRange] = radRange.split('-').map(parseFloat);
+
+      rows = rows.filter(user => {
+        const distance = calculateDistance(lat, lon, user.latitude, user.longitude);
+        return distance >= minRange && distance <= maxRange;
+      });
+    }
+
+    res.status(200).json(rows);
+  });
 });
 
 // POST APIs
@@ -355,9 +414,9 @@ app.post('/users/signup', upload.fields([
       res.status(201).json({
         status: true,
         message: 'User signed up successfully',
-        user: { 
-          id: result.insertId, 
-          ...user, 
+        user: {
+          id: result.insertId,
+          ...user,
           likes: interestsList, // Return interests as an array
           profile_images: profileImageUrls // Return profile_images as an array
         }
@@ -415,100 +474,104 @@ app.post('/users/signup', upload.fields([
  *             schema:
  *               type: object
  */
-/*
-app.put('/users/editUser/:id',   upload.fields([
+
+app.put('/users/editUser/:id', upload.fields([
   { name: 'profile_pic', maxCount: 1 },
   { name: 'avatar_image', maxCount: 1 },
   { name: 'profile_images', maxCount: 10 }]), async (req, res) => {
-    
-  const id = req.params.id;
+
+    const id = req.params.id;
     // Implementation for editing a user
-  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req?.body;
-  const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
+    const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
+    const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
 
-
-  const uploadPromises = [];
-
-  // Upload profile picture if present
-  if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
-    uploadPromises.push(uploadToCloudinary(req.files['profile_pic'][0], 'profile_pics'));
-  }
-
-  // Upload avatar image if present
-  if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
-    uploadPromises.push(uploadToCloudinary(req.files['avatar_image'][0], 'avatar_images'));
-  }
-
-  // Upload profile images if present
-  if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
-    req.files['profile_images'].forEach(file => {
-      uploadPromises.push(uploadToCloudinary(file, 'profile_images'));
-    });
-  }
-
-  try {
-    // Wait for all uploads to complete
-    const uploadedFiles = await Promise.all(uploadPromises);
-  }
-  catch(e){
-    return res.send("Error Faced while Uploading Images: ", e);
-  }
-
-  //base query
-  let query = 'SELECT * FROM users WHERE id !=? ';
-  let queryParams = [];
-  queryParams.push(id);
-
-  console.log(queryParams);
-  
-  let updates = [];
-
-  if (name) {
-      updates.push('name = ?');
-      queryParams.push(name[0]);
-  }
-  if (dob) {
-      updates.push('dob = ?');
-      queryParams.push(dob[0]);
-  }
-  if (bio) {
-      updates.push('bio = ?');
-      queryParams.push(bio[0]);
-  }
-  if (contact) {
+    // Collect the fields to update
+    let updates = [];
+    let queryParams = [];
+   
+    if (name) {
+      updates.push('full_name = ?');
+      queryParams.push(name);
+    }
+    if (contact) {
       updates.push('contact = ?');
-      queryParams.push(contact[0]);
-  }
-  if (gender) {
+      queryParams.push(contact);
+    }
+    if (dob) {
+      updates.push('date_of_birth = ?');
+      queryParams.push(dob);
+    }
+    if (bio) {
+      updates.push('bio = ?');
+      queryParams.push(bio);
+    }
+    if (contact) {
+      updates.push('contact = ?');
+      queryParams.push(contact);
+    }
+    if (gender) {
       updates.push('gender = ?');
-      queryParams.push(gender[0]);
-  }
-  if (education) {
+      queryParams.push(gender);
+    }
+    if (education) {
       updates.push('education = ?');
-      queryParams.push(education[0]);
-  }
-  // If there are no fields to update, return an error
-  if (updates.length === 0) {
-      return res.status(400).send('No fields to update');
-  }
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-  queryParams.push(userId);
-  // Execute the query
-  db.run(query, queryParams, function (err) {
-      if (err) {
+      queryParams.push(education);
+    }
+    if (interests) {
+      updates.push('likes = ?');
+      queryParams.push(interestsList);
+    }
+    if (longitude) {
+      updates.push('longitude = ?');
+      queryParams.push(longitude);
+    }
+    if (latitude) {
+      updates.push('latitude = ?');
+      queryParams.push(latitude);
+    }
+
+    if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
+      const profilePicUrl = await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics');
+      updates.push('profile_pic_url=?');
+      queryParams.push(profilePicUrl);
+    }
+
+    if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
+      const avatarImageUrl = await uploadToCloudinary(req.files.avatar_image[0], 'avatar_images');
+      updates.push(avatar_url);
+      queryParams.push(avatarImageUrl);
+    }
+
+    if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
+      const profileImageUrls = await Promise.all(
+        req.files.profile_images.map(file => uploadToCloudinary(file, 'profile_images'))
+      )
+
+      updates.push('profile_images=?');
+      queryParams.push(profileImageUrls);
+    }
+
+      // If there are no fields to update, return an error
+      if (updates.length === 0) {
+        return res.status(400).send('No fields to update');
+      }
+
+      console.log(updates.length);
+      const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+      queryParams.push(id);
+      // Execute the query
+      db.query(query, queryParams, function (err) {
+        if (err) {
           return res.status(500).send(err.message);
-      }
-      // Check if any rows were affected
-      if (this.changes === 0) {
+        }
+        // Check if any rows were affected
+        if (this.changes === 0) {
           return res.status(404).send('User not found');
-      }
-      res.status(200).send('User updated successfully');
+        }
+        res.status(200).send('User updated successfully');
+      });
+
   });
-
-  // console.log(name, contact, education, );
-
-});
-*/
 // DELETE APIs
 /**
  * @swagger
