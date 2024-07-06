@@ -394,7 +394,7 @@ app.post('/users/signup', upload.fields([
       gender: gender,
       bio: bio,
       date_of_birth: dob,
-      likes: interestsList, // Save as a JSON string in the database
+      likes: JSON.stringify(interestsList), // Save as a JSON string in the database
       latitude: parseFloat(latitude), // Convert latitude to float
       longitude: parseFloat(longitude), // Convert longitude to float
       profile_pic_url: profilePicUrl,
