@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const http = require('http');
 const socketIo = require('socket.io');
 const multer = require('multer');
+const cors = require('cors'); // Import the CORS middleware
 
 const { specs, swaggerUi } = require('./config/swagger');
 
@@ -20,6 +21,8 @@ const upload = multer({ storage: storage });
 
 // APP SETUP
 const port = 3000;
+
+app.use(cors()); // Enable CORS for all routes
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -258,12 +261,95 @@ app.get('/', (req, res) => {
   res.send('Hello, world!');
 });
 
+/**
+ * @swagger
+ * /users/getUsers:
+ *   get:
+ *     summary: Get users based on filters
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: ID of the user making the request
+ *       - in: query
+ *         name: longitude
+ *         schema:
+ *           type: number
+ *         description: Longitude of the user's location
+ *       - in: query
+ *         name: latitude
+ *         schema:
+ *           type: number
+ *         description: Latitude of the user's location
+ *       - in: query
+ *         name: gender
+ *         schema:
+ *           type: string
+ *         description: Gender filter, can be multiple values separated by commas
+ *       - in: query
+ *         name: ageRange
+ *         schema:
+ *           type: string
+ *         description: Age range filter in the format minAge-maxAge
+ *       - in: query
+ *         name: interests
+ *         schema:
+ *           type: string
+ *         description: Interests filter, can be multiple values separated by commas
+ *       - in: query
+ *         name: radRange
+ *         schema:
+ *           type: string
+ *         description: Radius range filter in the format minRange-maxRange
+ *     responses:
+ *       200:
+ *         description: List of users matching the filters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   full_name:
+ *                     type: string
+ *                   contact:
+ *                     type: string
+ *                   gender:
+ *                     type: string
+ *                   bio:
+ *                     type: string
+ *                   date_of_birth:
+ *                     type: string
+ *                   interests:
+ *                     type: string
+ *                   latitude:
+ *                     type: number
+ *                   longitude:
+ *                     type: number
+ *                   education:
+ *                     type: string
+ *                   profile_pic_url:
+ *                     type: string
+ *                   avatar_url:
+ *                     type: string
+ *                   profile_images:
+ *                     type: string
+ *       400:
+ *         description: Bad request
+ *       500:
+ *         description: Internal server error
+ */
 //searching based on filter, filters to be passed as parameters
 app.get('/users/getUsers', async (req, res) => {
   //const id = req.params.id;
   const { id, longitude, latitude, gender, ageRange, interests, radRange } = req?.query;
 
-  console.log(gender);
   // Start with a base query
   let query = 'SELECT * FROM users WHERE id != ? ';
   let queryParams = [];
@@ -282,7 +368,7 @@ app.get('/users/getUsers', async (req, res) => {
     const [minAge, maxAge] = ageRange.split('-').map(Number);
     const minDob = new Date(new Date().setFullYear(new Date().getFullYear() - maxAge));
     const maxDob = new Date(new Date().setFullYear(new Date().getFullYear() - minAge));
-    query += ' AND dob BETWEEN ? AND ?';
+    query += ' AND date_of_birth BETWEEN ? AND ?';
     queryParams.push(minDob.toISOString(), maxDob.toISOString());
   }
 
@@ -314,6 +400,46 @@ app.get('/users/getUsers', async (req, res) => {
     }
 
     res.status(200).json(rows);
+  });
+});
+
+//This is the get all Requests API
+app.get('/users/allRequests',async(req, res)=>{
+ 
+  db.query('SELECT * FROM request', (err, result) => {
+    if (err) {
+      return res.status(500).json({ status: false, message: err.message, requests: null });
+    }
+
+    let requests = result.map(myRequest => {;
+      return myRequest;
+    });
+
+    res.status(200).json({ status: true, message: 'Requests fetched successfully', requests });
+  });
+});
+
+//This is the get Request API for a user
+app.get('/users/getRequests',async(req, res)=>{
+ 
+  const {id} = req.query;
+
+  let query='SELECT * FROM request WHERE receiver_id = ? ';
+  let queryParams=[id];
+  
+  query += ' AND status = ? ';
+  queryParams.push('pending');
+
+  db.query(query,queryParams, (err, result) => {
+    if (err) {
+      return res.status(500).json({ status: false, message: err.message, requests: null });
+    }
+
+    let requests = result.map(myRequest => {;
+      return myRequest;
+    });
+
+    res.status(200).json({ status: true, message: 'Requests fetched successfully', requests });
   });
 });
 
@@ -425,6 +551,29 @@ app.post('/users/signup', upload.fields([
   } catch (error) {
     res.status(500).json({ status: false, message: error.message, user: null });
   }
+});
+
+//This is the send Request API
+app.post('/users/sendRequest', upload.none(),async(req, res)=>{
+
+  const {senderID, receiverID} = req.body;
+
+  const sendingRequest={
+    sender_id: senderID,
+    receiver_id: receiverID,
+    status: 'pending'
+  }
+  
+  db.query('INSERT INTO request SET ?', sendingRequest, (err, result) => {
+    if (err) {
+      return res.status(500).json({ status: false, message: err.message, sendingRequest: null });
+    }
+    res.status(201).json({
+      status: true,
+      message: "Request sent Successfully"
+    })
+  });
+
 });
 
 

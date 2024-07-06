@@ -19,6 +19,17 @@ const setupQueries = `
     subscribed BOOLEAN DEFAULT false,
     subscription_expiry DATE
 );
+
+  CREATE TABLE IF NOT EXISTS request(
+    sender_id INT,
+    receiver_id INT,
+    request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
+    PRIMARY KEY (sender_id, receiver_id),
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 `;
 
 module.exports = setupQueries;
