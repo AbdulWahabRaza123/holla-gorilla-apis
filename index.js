@@ -403,6 +403,49 @@ app.get('/users/getUsers', async (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /users/allRequests:
+ *   get:
+ *     summary: Get all requests
+ *     tags: [Requests]
+ *     description: Retrieve all requests from the database.
+ *     responses:
+ *       200:
+ *         description: A list of requests fetched successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   description: Indicates if the request was successful.
+ *                 message:
+ *                   type: string
+ *                   description: Message related to the status of the request.
+ *                 requests:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: The ID of the request.
+ *                       senderID:
+ *                         type: string
+ *                         description: The ID of the sender.
+ *                       receiverID:
+ *                         type: string
+ *                         description: The ID of the receiver.
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: The timestamp when the request was created.
+ *     security:
+ *       - apiKeyAuth: []
+ */
+
 //This is the get all Requests API
 app.get('/users/allRequests',async(req, res)=>{
  
@@ -720,7 +763,12 @@ app.put('/users/editUser/:id', upload.fields([
       if (err) {
         return res.status(500).json({status:false, error: err.message});
       }
-      res.status(200).json({status: true, user: rows[0]});
+
+      let retUser = rows[0];
+
+      retUser.longitude = parseFloat(retUser.longitude);
+      retUser.latitude = parseFloat(retUser.latitude);
+      res.status(200).json({status: true, user: retUser});
     });
   });
 });
