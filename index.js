@@ -462,6 +462,55 @@ app.get('/users/allRequests',async(req, res)=>{
   });
 });
 
+/**
+ * @swagger
+ * /users/getRequests:
+ *   get:
+ *     summary: Get requests for a user
+ *     description: Retrieve requests for a specific user based on receiver ID and status.
+ *     tags: [Requests]
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Receiver ID to filter requests.
+ *     responses:
+ *       200:
+ *         description: A list of requests fetched successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   description: Indicates if the request was successful.
+ *                 message:
+ *                   type: string
+ *                   description: Message related to the status of the request.
+ *                 requests:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: The ID of the request.
+ *                       senderID:
+ *                         type: string
+ *                         description: The ID of the sender.
+ *                       receiverID:
+ *                         type: string
+ *                         description: The ID of the receiver.
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: The timestamp when the request was created.
+ *     security:
+ *       - apiKeyAuth: []
+ */
 //This is the get Request API for a user
 app.get('/users/getRequests',async(req, res)=>{
  
@@ -595,6 +644,60 @@ app.post('/users/signup', upload.fields([
     res.status(500).json({ status: false, message: error.message, user: null });
   }
 });
+
+/**
+ * @swagger
+ * /users/sendRequest:
+ *   post:
+ *     summary: Send a request
+ *     tags: [Requests]
+ *     description: Create a new request with sender and receiver IDs.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               senderID:
+ *                 type: string
+ *                 description: The ID of the sender.
+ *               receiverID:
+ *                 type: string
+ *                 description: The ID of the receiver.
+ *     responses:
+ *       201:
+ *         description: Request sent successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   description: Indicates if the request was successfully sent.
+ *                 message:
+ *                   type: string
+ *                   description: Message indicating the success of the request.
+ *       500:
+ *         description: Internal server error occurred.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   description: Indicates if an error occurred.
+ *                 message:
+ *                   type: string
+ *                   description: Error message describing the issue.
+ *                 sendingRequest:
+ *                   type: object
+ *                   description: The request object that failed to send.
+ *     security:
+ *       - apiKeyAuth: []
+ */
 
 //This is the send Request API
 app.post('/users/sendRequest', upload.none(),async(req, res)=>{
