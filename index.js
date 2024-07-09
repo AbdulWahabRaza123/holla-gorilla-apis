@@ -1009,7 +1009,7 @@ app.put('/users/editUser/:id', upload.fields([
  *     requestBody:
  *       required: true
  *       content:
- *         multipart/form-data:
+ *         application/json:
  *           schema:
  *             type: object
  *             properties:
@@ -1063,7 +1063,7 @@ app.put('/users/editUser/:id', upload.fields([
  *                   example: An error occurred while accepting the request
  */
 
-//This is the get Request API for a user
+//This is the accept Request API for a user
 app.put('/users/acceptRequest',upload.none(),async(req, res)=>{
  
   const {receiverID, senderID} = req.body;
@@ -1089,11 +1089,105 @@ app.put('/users/acceptRequest',upload.none(),async(req, res)=>{
     if (result.affectedRows === 0) {
       return res.status(404).send('User not found');
     }
-
+    
     res.status(200).json({ status: true, message: 'Request Accepted Successfully'});
   });
 });
 
+/**
+ * @swagger
+ * /users/rejectRequest:
+ *   put:
+ *     summary: Reject a friend request
+ *     description: Rejects a friend request by updating the status to 'accepted' for the specified sender and receiver IDs.
+ *     tags: [Requests]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               receiverID:
+ *                 type: string
+ *                 description: The ID of the user receiving the friend request
+ *                 example: 789
+ *               senderID:
+ *                 type: string
+ *                 description: The ID of the user sending the friend request
+ *                 example: 456
+ *     responses:
+ *       200:
+ *         description: Successfully rejected the friend request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Request Rejected Successfully
+ *       400:
+ *         description: Missing or invalid parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Missing or invalid parameters
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: An error occurred while accepting the request
+ */
+
+//This is the reject Request API for a user
+app.put('/users/rejectRequest',upload.none(),async(req, res)=>{
+ 
+  const {receiverID, senderID} = req.body;
+
+  const updates = ['status = ?'];
+  const queryParams = ['rejected'];
+  
+  const query = `UPDATE request SET ${updates.join(', ')} WHERE sender_id = ?`;
+  queryParams.push(senderID);
+
+  query.concat(' AND receiver_id = ?');
+  queryParams.push(receiverID);
+  
+  // let query='SELECT * FROM request WHERE receiver_id = ? ';
+  // let queryParams=[id];
+  
+  db.query(query,queryParams, (err, result) => {
+    if (err) {
+      return res.status(500).send(err.message);
+    }
+
+    // Check if any rows were affected
+    if (result.affectedRows === 0) {
+      return res.status(404).send('User not found');
+    }
+    
+    res.status(200).json({ status: true, message: 'Request Rejected Successfully'});
+  });
+});
 
 // DELETE APIs
 /**
