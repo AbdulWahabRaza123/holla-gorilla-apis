@@ -406,8 +406,7 @@ app.get('/users/getUsers', async (req, res) => {
       }
       else{
         let minRange=0;
-        let maxRange=5;
-        
+        let maxRange=1000;
         
         rows = rows.filter(user => {
           const distance = calculateDistance(lat, lon, user.latitude, user.longitude);
@@ -558,7 +557,7 @@ app.get('/users/getRequests',async(req, res)=>{
  * /users/getFriendList:
  *   get:
  *     summary: Get the friend list of a user
- *     description: Fetches the list of friends for a given user based on their user ID. Only accepted friend requests are included in the list.
+ *     description: Fetches the list of friends (user entities) for a given user based on their user ID. Only accepted friend requests are included in the list.
  *     tags: [Requests]
  *     parameters:
  *       - in: query
@@ -567,6 +566,7 @@ app.get('/users/getRequests',async(req, res)=>{
  *         description: The ID of the user whose friend list is to be fetched
  *         schema:
  *           type: string
+ *           example: 123
  *     responses:
  *       200:
  *         description: Successfully fetched the friend list
@@ -588,16 +588,28 @@ app.get('/users/getRequests',async(req, res)=>{
  *                     properties:
  *                       id:
  *                         type: string
- *                         example: 123
- *                       sender_id:
- *                         type: string
  *                         example: 456
- *                       receiver_id:
+ *                       name:
  *                         type: string
- *                         example: 789
- *                       status:
+ *                         example: John Doe
+ *                       email:
  *                         type: string
- *                         example: accepted
+ *                         example: john.doe@example.com
+ *                       contact:
+ *                         type: string
+ *                         example: 1234567890
+ *                       gender:
+ *                         type: string
+ *                         example: male
+ *                       dob:
+ *                         type: string
+ *                         example: 1990-01-01
+ *                       bio:
+ *                         type: string
+ *                         example: "Hello, I'm John!"
+ *                       interests:
+ *                         type: string
+ *                         example: "Reading, Traveling"
  *       400:
  *         description: Missing or invalid parameters
  *         content:
@@ -611,10 +623,6 @@ app.get('/users/getRequests',async(req, res)=>{
  *                 message:
  *                   type: string
  *                   example: Missing or invalid parameters
- *                 requests:
- *                   type: array
- *                   items:
- *                     type: object
  *       500:
  *         description: Internal server error
  *         content:
@@ -628,33 +636,33 @@ app.get('/users/getRequests',async(req, res)=>{
  *                 message:
  *                   type: string
  *                   example: An error occurred while fetching the friend list
- *                 requests:
- *                   type: array
- *                   items:
- *                     type: object
  */
 
 //Get Friend Lists
-app.get('/users/getFriendList',async(req, res)=>{
- 
-  const {id} = req.query;
+app.get('/users/getFriendList', async (req, res) => {
+  const { id } = req.query;
 
-  let query='SELECT * FROM request WHERE receiver_id = ? ';
-  let queryParams=[id];
-  
-  query += ' AND status = ? ';
-  queryParams.push('accepted');
+  let query = `
+    SELECT DISTINCT u.*
+    FROM request r
+    JOIN users u ON r.sender_id = u.id OR r.receiver_id = u.id
+    WHERE (r.receiver_id = ? OR r.sender_id = ?) AND r.status = ?
+  `;
+  let queryParams = [id, id, 'accepted'];
 
-  db.query(query,queryParams, (err, result) => {
+  db.query(query, queryParams, (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, requests: null });
+      return res.status(500).json({ status: false, message: err.message, list: null });
     }
+    
+    let requests = result.map(myRequest => {;
+      myRequest.latitude=parseFloat(myRequest.latitude);
+      myRequest.longitude=parseFloat(myRequest.longitude);
 
-    let list = result.map(myRequest => {;
       return myRequest;
     });
 
-    res.status(200).json({ status: true, message: 'Friend List fetched successfully', list });
+    res.status(200).json({ status: true, message: 'Friend List fetched successfully', list: requests });
   });
 });
 
