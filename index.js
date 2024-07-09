@@ -149,7 +149,11 @@ app.get('/get-messages', (req, res) => {
  *                 type: object
  */
 app.get('/users', (req, res) => {
-  db.query('SELECT * FROM users', (err, result) => {
+
+  const query = 'SELECT * FROM users WHERE status = ?';
+  const queryParams = ['ACTIVE'];
+
+  db.query(query,queryParams, (err, result) => {
     if (err) {
       return res.status(500).json({ status: false, message: err.message, users: null });
     }
@@ -1435,5 +1439,76 @@ app.delete('/deleteAllData/:tableName', (req, res) => {
       return res.status(500).json({ status: false, message: err.message });
     }
     res.status(200).json({ status: true, message: `All data from table ${tableName} deleted successfully` });
+  });
+});
+
+
+/**
+ * @swagger
+ * /users/removeUser:
+ *   put:
+ *     summary: Remove a user
+ *     description: Removes a user by updating their status to 'NON_ACTIVE' for the specified user ID.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         required: true
+ *         description: The ID of the user to be removed
+ *         schema:
+ *           type: string
+ *           example: 123
+ *     responses:
+ *       200:
+ *         description: Successfully removed the user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: User Removed Successfully
+ *       404:
+ *         description: User not found
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: User not found
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: Internal Server Error
+ */
+
+//API for removing friend 
+app.put('/users/removeUser',async(req, res)=>{
+ 
+  const {id} = req.query;
+
+  const updates = ['status = ?'];
+  let queryParams = ['NON_ACTIVE'];
+  
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  queryParams.push(id);
+
+  db.query(query,queryParams, (err, result) => {
+    if (err) {
+      return res.status(500).send(err.message);
+    }
+
+    // Check if any rows were affected
+    if (result.affectedRows === 0) {
+      return res.status(404).send('User not found');
+    }
+    
+    res.status(200).json({ status: true, message: 'User Removed Successfully'});
   });
 });
