@@ -1263,14 +1263,11 @@ app.put('/users/removeFriend',upload.none(),async(req, res)=>{
   console.log(friendID);
 
   const updates = ['status = ?'];
-  const queryParams = ['rejected'];
+  let queryParams = ['rejected'];
   
-  const query = `UPDATE request SET ${updates.join(', ')} WHERE (sender_id = ? AND receiver_id = ? ) OR (sender_id = ? AND receiver_id = ? ) `;
-  queryParams.push([]);
+  const query = `UPDATE request SET ${updates.join(', ')} WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)`;
+  queryParams.push(friendID, id, id, friendID);
 
-  query.concat(' AND receiver_id = ?');
-  queryParams.push(id);
-  
   query.concat(' AND status = ?');
   queryParams.push('accepted');
   
