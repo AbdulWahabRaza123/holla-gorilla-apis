@@ -645,8 +645,8 @@ app.get('/users/getFriendList', async (req, res) => {
   let query = `
     SELECT DISTINCT u.*
     FROM request r
-    JOIN users u ON r.sender_id = u.id OR r.receiver_id = u.id
-    WHERE (r.receiver_id = ? OR r.sender_id = ?) AND r.status = ?
+    JOIN users u ON (r.sender_id = u.id AND r.receiver_id = ?) OR (r.receiver_id = u.id AND r.sender_id = ?)
+    WHERE r.status = ?
   `;
   let queryParams = [id, id, 'accepted'];
 
@@ -1194,6 +1194,97 @@ app.put('/users/rejectRequest',upload.none(),async(req, res)=>{
     }
     
     res.status(200).json({ status: true, message: 'Request Rejected Successfully'});
+  });
+});
+
+
+/**
+ * @swagger
+ * /users/removeFriend:
+ *   put:
+ *     summary: Remove a friend
+ *     description: Removes a friend by updating the status to 'rejected' for the specified sender and receiver IDs.
+ *     tags: [Requests]
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         required: true
+ *         description: The ID of the user who is removing the friend
+ *         schema:
+ *           type: string
+ *           example: 123
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               friendID:
+ *                 type: string
+ *                 description: The ID of the friend being removed
+ *                 example: 456
+ *     responses:
+ *       200:
+ *         description: Successfully removed the friend
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Friend Removed Successfully
+ *       404:
+ *         description: User not found
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: User not found
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *               example: Internal Server Error
+ */
+
+//API for removing friend 
+app.put('/users/removeFriend',upload.none(),async(req, res)=>{
+ 
+  const {id} = req.query;
+  const {friendID} = req.body;
+
+  console.log(friendID);
+
+  const updates = ['status = ?'];
+  const queryParams = ['rejected'];
+  
+  const query = `UPDATE request SET ${updates.join(', ')} WHERE (sender_id = ? AND receiver_id = ? ) OR (sender_id = ? AND receiver_id = ? ) `;
+  queryParams.push([]);
+
+  query.concat(' AND receiver_id = ?');
+  queryParams.push(id);
+  
+  query.concat(' AND status = ?');
+  queryParams.push('accepted');
+  
+  db.query(query,queryParams, (err, result) => {
+    if (err) {
+      return res.status(500).send(err.message);
+    }
+
+    // Check if any rows were affected
+    if (result.affectedRows === 0) {
+      return res.status(404).send('User not found');
+    }
+    
+    res.status(200).json({ status: true, message: 'Friend Removed Successfully'});
   });
 });
 
