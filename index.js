@@ -322,7 +322,19 @@ app.get("/get-messages", (req, res) => {
  *                   type: string
  *                   example: "Error retrieving messages"
  */
-app.get("/get-recentMessages", (req, res) => {
+const queryDb = (query, params) => {
+  return new Promise((resolve, reject) => {
+    db.query(query, params, (err, results) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(results);
+      }
+    });
+  });
+};
+
+app.get("/get-recentMessages", async (req, res) => {
   const { app_id, user_id } = req.query;
 
   const query = `
@@ -338,13 +350,33 @@ app.get("/get-recentMessages", (req, res) => {
     ORDER BY timestamp DESC;
   `;
 
-  db.query(query, [app_id, user_id, user_id], (err, results) => {
-    if (err) {
-      console.error("Error retrieving messages:", err);
-      return res.status(500).send("Error retrieving messages");
-    }
-    res.status(200).json(results);
-  });
+  try {
+    const messages = await queryDb(query, [app_id, user_id, user_id]);
+
+    const userPromises = messages.map(async (message) => {
+      const userQuery = `SELECT * FROM users WHERE id = ?`;
+      if (user_id == message.from_user) {
+        const user = await queryDb(userQuery, [message.to_user]);
+        return {
+          ...message,
+          user: user[0],
+        };
+      } else {
+        const user = await queryDb(userQuery, [message.from_user]);
+        return {
+          ...message,
+          user: user[0],
+        };
+      }
+    });
+
+    const messagesWithUsers = await Promise.all(userPromises);
+
+    res.status(200).json(messagesWithUsers);
+  } catch (err) {
+    console.error("Error retrieving messages:", err);
+    res.status(500).send("Error retrieving messages");
+  }
 });
 
 /**
