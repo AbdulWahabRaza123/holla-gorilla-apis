@@ -1,16 +1,16 @@
-require('dotenv').config();
+require("dotenv").config();
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const http = require('http');
-const socketIo = require('socket.io');
-const multer = require('multer');
-const cors = require('cors'); // Import the CORS middleware
+const express = require("express");
+const bodyParser = require("body-parser");
+const http = require("http");
+const socketIo = require("socket.io");
+const multer = require("multer");
+const cors = require("cors"); // Import the CORS middleware
 
-const { specs, swaggerUi } = require('./config/swagger');
+const { specs, swaggerUi } = require("./config/swagger");
 
-const db = require('./config/dbConnection');
-const setupQueries = require('./components/queries');
+const db = require("./config/dbConnection");
+const setupQueries = require("./components/queries");
 
 const app = express();
 const server = http.createServer(app);
@@ -28,23 +28,27 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve Swagger UI
-app.use('/api-docs', express.static('node-modules/swagger-ui-dist/',
-  { index: false }), swaggerUi.serve, swaggerUi.setup(specs));
+app.use(
+  "/api-docs",
+  express.static("node-modules/swagger-ui-dist/", { index: false }),
+  swaggerUi.serve,
+  swaggerUi.setup(specs)
+);
 
 // DB Connection
 db.connect((err) => {
   if (err) {
-    console.error('Error connecting to MySQL:', err);
+    console.error("Error connecting to MySQL:", err);
     return;
   }
-  console.log('Connected to MySQL');
+  console.log("Connected to MySQL");
 
   db.query(setupQueries, (err, results) => {
     if (err) {
-      console.error('Error setting up database:', err);
+      console.error("Error setting up database:", err);
       return;
     }
-    console.log('Database setup complete');
+    console.log("Database setup complete");
     server.listen(port, () => {
       console.log(`Server is running on port ${port}`);
     });
@@ -52,28 +56,74 @@ db.connect((err) => {
 });
 
 // Helper functions
-const { calculateDistance, uploadToCloudinary, validateSignup } = require('./utils');
-const { machine } = require('os');
+const {
+  calculateDistance,
+  uploadToCloudinary,
+  validateSignup,
+} = require("./utils");
+const { machine } = require("os");
 
 // Message handling
-io.on('connection', (socket) => {
-  console.log('New client connected');
 
-  socket.on('sendMessage', (data) => {
+// const { app_id, from, to, message } = req.body;
+// // const query = `
+// // INSERT INTO messages
+// // (app_id,from_user,to_user,message) VALUES (?,?,?,?)
+// // `;
+// //let queryParams = [app_id,from,to,message];
+
+// Function to handle message sending
+const sendMessage = (app_id, from, to, message, callback) => {
+  const query =
+    "INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)";
+  db.query(query, [app_id, from, to, message], (err, results) => {
+    if (err) {
+      callback(err, null);
+      return;
+    }
+
+    const newMessage = { app_id, from, to, message };
+    io.emit("newMessage", newMessage);
+    callback(null, newMessage);
+  });
+};
+
+// WebSocket connection handler
+io.on("connection", (socket) => {
+  console.log("New client connected");
+
+  socket.on("sendMessage", (data) => {
     const { app_id, from, to, message } = data;
-    const query = 'INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)';
-
-    connection.query(query, [app_id, from, to, message], (err, results) => {
+    sendMessage(app_id, from, to, message, (err, newMessage) => {
       if (err) {
-        socket.emit('messageError', 'Error sending message');
+        socket.emit("messageError", "Error sending message");
         return;
       }
-      io.emit('newMessage', data);
     });
   });
 
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
+  socket.on("disconnect", () => {
+    console.log("Client disconnected");
+  });
+});
+
+// POST API endpoint
+app.post("/send-message", (req, res) => {
+  const { app_id, from, to, message } = req.body;
+
+  if (!app_id || !from || !to || !message) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+
+  sendMessage(app_id, from, to, message, (err, newMessage) => {
+    if (err) {
+      return res.status(500).json({ error: "Error sending message" });
+    }
+    res.status(200).json({
+      status: "true",
+      message: "Message Sent Successfully",
+      newMessage,
+    });
   });
 });
 
@@ -115,7 +165,7 @@ io.on('connection', (socket) => {
  *               items:
  *                 type: object
  */
-app.get('/get-messages', (req, res) => {
+app.get("/get-messages", (req, res) => {
   const { app_id, user1, user2 } = req.query;
   const query = `
     SELECT * FROM messages 
@@ -124,11 +174,36 @@ app.get('/get-messages', (req, res) => {
     ORDER BY timestamp ASC
   `;
 
-  connection.query(query, [app_id, user1, user2, user2, user1], (err, results) => {
+  db.query(query, [app_id, user1, user2, user2, user1], (err, results) => {
     if (err) {
-      return res.status(500).send('Error retrieving messages');
+      return res.status(500).send("Error retrieving messages");
     }
     res.json(results);
+  });
+});
+
+app.get("/get-recentMessages", (req, res) => {
+  const { app_id, user_id } = req.query;
+
+  const query = `
+    SELECT from_user, message, timestamp
+    FROM (
+      SELECT 
+        m.from_user, m.to_user, m.message, m.timestamp,
+        ROW_NUMBER() OVER (PARTITION BY LEAST(m.from_user, m.to_user), GREATEST(m.from_user, m.to_user) ORDER BY m.timestamp DESC) AS rn
+      FROM messages m
+      WHERE m.app_id = ? AND (m.from_user = ? OR m.to_user = ?)
+    ) AS recent_messages
+    WHERE rn = 1
+    ORDER BY timestamp DESC;
+  `;
+
+  db.query(query, [app_id, user_id, user_id], (err, results) => {
+    if (err) {
+      console.error("Error retrieving messages:", err);
+      return res.status(500).send("Error retrieving messages");
+    }
+    res.status(200).json(results);
   });
 });
 
@@ -148,27 +223,27 @@ app.get('/get-messages', (req, res) => {
  *               items:
  *                 type: object
  */
-app.get('/users', (req, res) => {
+app.get("/users", (req, res) => {
+  const query = "SELECT * FROM users WHERE status = ?";
+  const queryParams = ["ACTIVE"];
 
-  const query = 'SELECT * FROM users WHERE status = ?';
-  const queryParams = ['ACTIVE'];
-
-  db.query(query,queryParams, (err, result) => {
+  db.query(query, queryParams, (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, users: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, users: null });
     }
 
-    let users = result.map(user => {
-      
+    let users = result.map((user) => {
       user.longitude = parseFloat(user.longitude);
       user.latitude = parseFloat(user.latitude);
-
-
 
       return user;
     });
 
-    res.status(200).json({ status: true, message: 'Users fetched successfully', users });
+    res
+      .status(200)
+      .json({ status: true, message: "Users fetched successfully", users });
   });
 });
 
@@ -194,20 +269,26 @@ app.get('/users', (req, res) => {
  *             schema:
  *               type: object
  */
-app.get('/users/id/:id', (req, res) => {
+app.get("/users/id/:id", (req, res) => {
   const { id } = req.params;
 
-  db.query('SELECT * FROM users WHERE id = ?', [id], (err, result) => {
+  db.query("SELECT * FROM users WHERE id = ?", [id], (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, user: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, user: null });
     }
     if (result.length === 0) {
-      return res.status(404).json({ status: false, message: 'User not found', user: null });
+      return res
+        .status(404)
+        .json({ status: false, message: "User not found", user: null });
     }
 
     const user = result[0];
 
-    res.status(200).json({ status: true, message: 'User fetched successfully', user });
+    res
+      .status(200)
+      .json({ status: true, message: "User fetched successfully", user });
   });
 });
 
@@ -232,24 +313,30 @@ app.get('/users/id/:id', (req, res) => {
  *             schema:
  *               type: object
  */
-app.get('/users/exists/:contact', (req, res) => {
+app.get("/users/exists/:contact", (req, res) => {
   const { contact } = req.params;
 
-  db.query('SELECT * FROM users WHERE contact = ?', [contact], (err, result) => {
-    if (err) {
-      return res.status(500).json({ status: false, message: err.message });
+  db.query(
+    "SELECT * FROM users WHERE contact = ?",
+    [contact],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ status: false, message: err.message });
+      }
+      if (result.length === 0) {
+        return res
+          .status(404)
+          .json({ status: false, message: "User does not exist", user: null });
+      }
+
+      let user = result[0];
+
+      user.longitude = parseFloat(user.longitude);
+      user.latitude = parseFloat(user.latitude);
+
+      res.status(200).json({ status: true, message: "User exists", user });
     }
-    if (result.length === 0) {
-      return res.status(404).json({ status: false, message: 'User does not exist', user: null });
-    }
-
-    let user = result[0];
-
-    user.longitude = parseFloat(user.longitude);
-    user.latitude = parseFloat(user.latitude);
-
-    res.status(200).json({ status: true, message: 'User exists', user });
-  });
+  );
 });
 
 /**
@@ -266,8 +353,8 @@ app.get('/users/exists/:contact', (req, res) => {
  *             schema:
  *               type: string
  */
-app.get('/', (req, res) => {
-  res.send('Hello, world!');
+app.get("/", (req, res) => {
+  res.send("Hello, world!");
 });
 
 /**
@@ -355,43 +442,52 @@ app.get('/', (req, res) => {
  *         description: Internal server error
  */
 //searching based on filter, filters to be passed as parameters
-app.get('/users/getUsers', async (req, res) => {
+app.get("/users/getUsers", async (req, res) => {
   //const id = req.params.id;
-  const { id, latitude, longitude, gender, ageRange, interests, radRange } = req?.query;
+  const { id, latitude, longitude, gender, ageRange, interests, radRange } =
+    req?.query;
 
   // Start with a base query
-  let query = 'SELECT * FROM users WHERE id != ? ';
+  let query = "SELECT * FROM users WHERE id != ? ";
   let queryParams = [];
   queryParams.push(id);
 
   // Handle gender filter
   if (gender) {
-    console.log('Gender was passed');
-    const genderArr = gender.split(',');
-    query += ' AND (' + genderArr.map(_ => 'gender LIKE ?').join(' OR ') + ')';
-    queryParams = queryParams.concat(genderArr.map(gender => `%${gender}%`));
+    console.log("Gender was passed");
+    const genderArr = gender.split(",");
+    query +=
+      " AND (" + genderArr.map((_) => "gender LIKE ?").join(" OR ") + ")";
+    queryParams = queryParams.concat(genderArr.map((gender) => `%${gender}%`));
   }
 
   // Handle age range filter
   if (ageRange) {
-    const [minAge, maxAge] = ageRange.split('-').map(Number);
-    const minDob = new Date(new Date().setFullYear(new Date().getFullYear() - maxAge));
-    const maxDob = new Date(new Date().setFullYear(new Date().getFullYear() - minAge));
-    query += ' AND date_of_birth BETWEEN ? AND ?';
+    const [minAge, maxAge] = ageRange.split("-").map(Number);
+    const minDob = new Date(
+      new Date().setFullYear(new Date().getFullYear() - maxAge)
+    );
+    const maxDob = new Date(
+      new Date().setFullYear(new Date().getFullYear() - minAge)
+    );
+    query += " AND date_of_birth BETWEEN ? AND ?";
     queryParams.push(minDob.toISOString(), maxDob.toISOString());
   }
 
   // Handle interests filter
   if (interests) {
-    const interestsArray = interests.split(',');
-    query += ' AND (' + interestsArray.map(_ => 'likes LIKE ?').join(' OR ') + ')';
-    queryParams = queryParams.concat(interestsArray.map(interest => `%${interest}%`));
+    const interestsArray = interests.split(",");
+    query +=
+      " AND (" + interestsArray.map((_) => "likes LIKE ?").join(" OR ") + ")";
+    queryParams = queryParams.concat(
+      interestsArray.map((interest) => `%${interest}%`)
+    );
   }
 
   // Execute the query
   console.log(query);
 
-    db.query(query, queryParams, (err, rows) => {
+  db.query(query, queryParams, (err, rows) => {
     if (err) {
       return res.status(500).send(err.message);
     }
@@ -401,24 +497,32 @@ app.get('/users/getUsers', async (req, res) => {
       const lat = parseFloat(latitude);
       const lon = parseFloat(longitude);
 
-      if(radRange){
-        const [minRange, maxRange] = radRange.split('-').map(parseFloat);
-        rows = rows.filter(user => {
-          const distance = calculateDistance(lat, lon, user.latitude, user.longitude);
+      if (radRange) {
+        const [minRange, maxRange] = radRange.split("-").map(parseFloat);
+        rows = rows.filter((user) => {
+          const distance = calculateDistance(
+            lat,
+            lon,
+            user.latitude,
+            user.longitude
+          );
           return distance >= minRange && distance <= maxRange;
         });
-      }
-      else{
-        let minRange=0;
-        let maxRange=1000;
-        
-        rows = rows.filter(user => {
-          const distance = calculateDistance(lat, lon, user.latitude, user.longitude);
+      } else {
+        let minRange = 0;
+        let maxRange = 1000;
+
+        rows = rows.filter((user) => {
+          const distance = calculateDistance(
+            lat,
+            lon,
+            user.latitude,
+            user.longitude
+          );
           console.log(distance);
           return distance >= minRange && distance <= maxRange;
         });
       }
-
     }
 
     res.status(200).json(rows);
@@ -469,18 +573,23 @@ app.get('/users/getUsers', async (req, res) => {
  */
 
 //This is the get all Requests API
-app.get('/users/allRequests',async(req, res)=>{
- 
-  db.query('SELECT * FROM request', (err, result) => {
+app.get("/users/allRequests", async (req, res) => {
+  db.query("SELECT * FROM request", (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, requests: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, requests: null });
     }
 
-    let requests = result.map(myRequest => {;
+    let requests = result.map((myRequest) => {
       return myRequest;
     });
 
-    res.status(200).json({ status: true, message: 'Requests fetched successfully', requests });
+    res.status(200).json({
+      status: true,
+      message: "Requests fetched successfully",
+      requests,
+    });
   });
 });
 
@@ -534,26 +643,31 @@ app.get('/users/allRequests',async(req, res)=>{
  *       - apiKeyAuth: []
  */
 //This is the get Request API for a user
-app.get('/users/getRequests',async(req, res)=>{
- 
-  const {id} = req.query;
+app.get("/users/getRequests", async (req, res) => {
+  const { id } = req.query;
 
-  let query='SELECT * FROM request WHERE receiver_id = ? ';
-  let queryParams=[id];
-  
-  query += ' AND status = ? ';
-  queryParams.push('pending');
+  let query = "SELECT * FROM request WHERE receiver_id = ? ";
+  let queryParams = [id];
 
-  db.query(query,queryParams, (err, result) => {
+  query += " AND status = ? ";
+  queryParams.push("pending");
+
+  db.query(query, queryParams, (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, requests: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, requests: null });
     }
 
-    let requests = result.map(myRequest => {;
+    let requests = result.map((myRequest) => {
       return myRequest;
     });
 
-    res.status(200).json({ status: true, message: 'Requests fetched successfully', requests });
+    res.status(200).json({
+      status: true,
+      message: "Requests fetched successfully",
+      requests,
+    });
   });
 });
 /**
@@ -643,7 +757,7 @@ app.get('/users/getRequests',async(req, res)=>{
  */
 
 //Get Friend Lists
-app.get('/users/getFriendList', async (req, res) => {
+app.get("/users/getFriendList", async (req, res) => {
   const { id } = req.query;
 
   let query = `
@@ -652,21 +766,27 @@ app.get('/users/getFriendList', async (req, res) => {
     JOIN users u ON (r.sender_id = u.id AND r.receiver_id = ?) OR (r.receiver_id = u.id AND r.sender_id = ?)
     WHERE r.status = ?
   `;
-  let queryParams = [id, id, 'accepted'];
+  let queryParams = [id, id, "accepted"];
 
   db.query(query, queryParams, (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, list: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, list: null });
     }
-    
-    let requests = result.map(myRequest => {;
-      myRequest.latitude=parseFloat(myRequest.latitude);
-      myRequest.longitude=parseFloat(myRequest.longitude);
+
+    let requests = result.map((myRequest) => {
+      myRequest.latitude = parseFloat(myRequest.latitude);
+      myRequest.longitude = parseFloat(myRequest.longitude);
 
       return myRequest;
     });
 
-    res.status(200).json({ status: true, message: 'Friend List fetched successfully', list: requests });
+    res.status(200).json({
+      status: true,
+      message: "Friend List fetched successfully",
+      list: requests,
+    });
   });
 });
 
@@ -723,62 +843,91 @@ app.get('/users/getFriendList', async (req, res) => {
  *             schema:
  *               type: object
  */
-app.post('/users/signup', upload.fields([
-  { name: 'profile_pic', maxCount: 1 },
-  { name: 'avatar_image', maxCount: 1 },
-  { name: 'profile_images', maxCount: 10 },
-  { name: 'document_url', maxCount: 1 }
-]), validateSignup, async (req, res) => {
-  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
-  const interestsList = interests.split(','); // Convert interests to an array
+app.post(
+  "/users/signup",
+  upload.fields([
+    { name: "profile_pic", maxCount: 1 },
+    { name: "avatar_image", maxCount: 1 },
+    { name: "profile_images", maxCount: 10 },
+    { name: "document_url", maxCount: 1 },
+  ]),
+  validateSignup,
+  async (req, res) => {
+    const {
+      name,
+      contact,
+      gender,
+      bio,
+      dob,
+      interests,
+      latitude,
+      longitude,
+      education,
+    } = req.body;
+    const interestsList = interests.split(","); // Convert interests to an array
 
-  try {
-    const profilePicUrl = req.files.profile_pic ? await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics') : null;
-    const avatarImageUrl = req.files.avatar_image ? await uploadToCloudinary(req.files.avatar_image[0], 'avatar_images') : null;
-    const documentURl = req.files.document_url ? await uploadToCloudinary(req.files.document_url[0], 'document_urls') : null;
+    try {
+      const profilePicUrl = req.files.profile_pic
+        ? await uploadToCloudinary(req.files.profile_pic[0], "profile_pics")
+        : null;
+      const avatarImageUrl = req.files.avatar_image
+        ? await uploadToCloudinary(req.files.avatar_image[0], "avatar_images")
+        : null;
+      const documentURl = req.files.document_url
+        ? await uploadToCloudinary(req.files.document_url[0], "document_urls")
+        : null;
 
-    const profileImageUrls = req.files.profile_images ? await Promise.all(
-      req.files.profile_images.map(file => uploadToCloudinary(file, 'profile_images'))
-    ) : [];
+      const profileImageUrls = req.files.profile_images
+        ? await Promise.all(
+            req.files.profile_images.map((file) =>
+              uploadToCloudinary(file, "profile_images")
+            )
+          )
+        : [];
 
-    const user = {
-      full_name: name,
-      contact: contact,
-      gender: gender,
-      bio: bio,
-      date_of_birth: dob,
-      likes: JSON.stringify(interestsList), // Save as a JSON string in the database
-      latitude: parseFloat(latitude), // Convert latitude to float
-      longitude: parseFloat(longitude), // Convert longitude to float
-      profile_pic_url: profilePicUrl,
-      avatar_url: avatarImageUrl,
-      profile_images: JSON.stringify(profileImageUrls), // Save as a JSON string in the database
-      document_url: documentURl,
-      education: education,
-      status: 'ACTIVE',
-      subscribed: false,
-      subscription_expiry: null
-    };
+      const user = {
+        full_name: name,
+        contact: contact,
+        gender: gender,
+        bio: bio,
+        date_of_birth: dob,
+        likes: JSON.stringify(interestsList), // Save as a JSON string in the database
+        latitude: parseFloat(latitude), // Convert latitude to float
+        longitude: parseFloat(longitude), // Convert longitude to float
+        profile_pic_url: profilePicUrl,
+        avatar_url: avatarImageUrl,
+        profile_images: JSON.stringify(profileImageUrls), // Save as a JSON string in the database
+        document_url: documentURl,
+        education: education,
+        status: "ACTIVE",
+        subscribed: false,
+        subscription_expiry: null,
+      };
 
-    db.query('INSERT INTO users SET ?', user, (err, result) => {
-      if (err) {
-        return res.status(500).json({ status: false, message: err.message, user: null });
-      }
-      res.status(201).json({
-        status: true,
-        message: 'User signed up successfully',
-        user: {
-          id: result.insertId,
-          ...user,
-          likes: interestsList, // Return interests as an array
-          profile_images: profileImageUrls // Return profile_images as an array
+      db.query("INSERT INTO users SET ?", user, (err, result) => {
+        if (err) {
+          return res
+            .status(500)
+            .json({ status: false, message: err.message, user: null });
         }
+        res.status(201).json({
+          status: true,
+          message: "User signed up successfully",
+          user: {
+            id: result.insertId,
+            ...user,
+            likes: interestsList, // Return interests as an array
+            profile_images: profileImageUrls, // Return profile_images as an array
+          },
+        });
       });
-    });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message, user: null });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ status: false, message: error.message, user: null });
+    }
   }
-});
+);
 
 /**
  * @swagger
@@ -835,28 +984,27 @@ app.post('/users/signup', upload.fields([
  */
 
 //This is the send Request API
-app.post('/users/sendRequest', upload.none(),async(req, res)=>{
+app.post("/users/sendRequest", upload.none(), async (req, res) => {
+  const { senderID, receiverID } = req.body;
 
-  const {senderID, receiverID} = req.body;
-
-  const sendingRequest={
+  const sendingRequest = {
     sender_id: senderID,
     receiver_id: receiverID,
-    status: 'pending'
-  }
-  
-  db.query('INSERT INTO request SET ?', sendingRequest, (err, result) => {
+    status: "pending",
+  };
+
+  db.query("INSERT INTO request SET ?", sendingRequest, (err, result) => {
     if (err) {
-      return res.status(500).json({ status: false, message: err.message, sendingRequest: null });
+      return res
+        .status(500)
+        .json({ status: false, message: err.message, sendingRequest: null });
     }
     res.status(201).json({
       status: true,
-      message: "Request sent Successfully"
-    })
+      message: "Request sent Successfully",
+    });
   });
-
 });
-
 
 // PUT APIs
 /**
@@ -905,111 +1053,146 @@ app.post('/users/sendRequest', upload.none(),async(req, res)=>{
  *               type: object
  */
 
-app.put('/users/editUser/:id', upload.fields([
-  { name: 'profile_pic', maxCount: 1 },
-  { name: 'avatar_image', maxCount: 1 },
-  { name: 'profile_images', maxCount: 10 }
-]), async (req, res) => {
+app.put(
+  "/users/editUser/:id",
+  upload.fields([
+    { name: "profile_pic", maxCount: 1 },
+    { name: "avatar_image", maxCount: 1 },
+    { name: "profile_images", maxCount: 10 },
+  ]),
+  async (req, res) => {
+    const id = req.params.id;
+    const {
+      name,
+      contact,
+      gender,
+      bio,
+      dob,
+      interests,
+      latitude,
+      longitude,
+      education,
+    } = req.body;
+    const interestsList = interests ? interests.split(",") : []; // Convert interests to an array
 
-  const id = req.params.id;
-  const { name, contact, gender, bio, dob, interests, latitude, longitude, education } = req.body;
-  const interestsList = interests ? interests.split(',') : []; // Convert interests to an array
+    // Collect the fields to update
+    let updates = [];
+    let queryParams = [];
 
-  // Collect the fields to update
-  let updates = [];
-  let queryParams = [];
-
-  if (name) {
-    updates.push('full_name = ?');
-    queryParams.push(name);
-  }
-  if (contact) {
-    updates.push('contact = ?');
-    queryParams.push(contact);
-  }
-  if (dob) {
-    updates.push('date_of_birth = ?');
-    queryParams.push(dob);
-  }
-  if (bio) {
-    updates.push('bio = ?');
-    queryParams.push(bio);
-  }
-  if (gender) {
-    updates.push('gender = ?');
-    queryParams.push(gender);
-  }
-  if (education) {
-    updates.push('education = ?');
-    queryParams.push(education);
-  }
-  if (interests) {
-    updates.push('likes = ?');
-    queryParams.push(interestsList.join(',')); // Convert back to string for storage
-  }
-  if (longitude) {
-    updates.push('longitude = ?');
-    queryParams.push(longitude);
-  }
-  if (latitude) {
-    updates.push('latitude = ?');
-    queryParams.push(latitude);
-  }
-
-  if (req.files && req.files['profile_pic'] && req.files['profile_pic'].length > 0) {
-    const profilePicUrl = await uploadToCloudinary(req.files.profile_pic[0], 'profile_pics');
-    updates.push('profile_pic_url = ?');
-    queryParams.push(profilePicUrl);
-  }
-
-  if (req.files && req.files['avatar_image'] && req.files['avatar_image'].length > 0) {
-    const avatarImageUrl = await uploadToCloudinary(req.files.avatar_image[0], 'avatar_images');
-    updates.push('avatar_url = ?');
-    queryParams.push(avatarImageUrl);
-  }
-
-  if (req.files && req.files['profile_images'] && req.files['profile_images'].length > 0) {
-    const profileImageUrls = await Promise.all(
-      req.files.profile_images.map(file => uploadToCloudinary(file, 'profile_images'))
-    );
-
-    updates.push('profile_images = ?');
-    queryParams.push(JSON.stringify(profileImageUrls)); // Store as JSON string
-  }
-
-  // If there are no fields to update, return a specific message
-  if (updates.length === 0) {
-    return res.status(200).json({ status: false, message: 'Nothing to update' });
-  }
-
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-  queryParams.push(id);
-
-  // Execute the query
-  db.query(query, queryParams, function (err, result) {
-    if (err) {
-      return res.status(500).send(err.message);
+    if (name) {
+      updates.push("full_name = ?");
+      queryParams.push(name);
+    }
+    if (contact) {
+      updates.push("contact = ?");
+      queryParams.push(contact);
+    }
+    if (dob) {
+      updates.push("date_of_birth = ?");
+      queryParams.push(dob);
+    }
+    if (bio) {
+      updates.push("bio = ?");
+      queryParams.push(bio);
+    }
+    if (gender) {
+      updates.push("gender = ?");
+      queryParams.push(gender);
+    }
+    if (education) {
+      updates.push("education = ?");
+      queryParams.push(education);
+    }
+    if (interests) {
+      updates.push("likes = ?");
+      queryParams.push(interestsList.join(",")); // Convert back to string for storage
+    }
+    if (longitude) {
+      updates.push("longitude = ?");
+      queryParams.push(longitude);
+    }
+    if (latitude) {
+      updates.push("latitude = ?");
+      queryParams.push(latitude);
     }
 
-    // Check if any rows were affected
-    if (result.affectedRows === 0) {
-      return res.status(404).send('User not found');
+    if (
+      req.files &&
+      req.files["profile_pic"] &&
+      req.files["profile_pic"].length > 0
+    ) {
+      const profilePicUrl = await uploadToCloudinary(
+        req.files.profile_pic[0],
+        "profile_pics"
+      );
+      updates.push("profile_pic_url = ?");
+      queryParams.push(profilePicUrl);
     }
 
-    // Fetch and return the updated user entity
-    db.query('SELECT * FROM users WHERE id = ?', [id], (err, rows) => {
+    if (
+      req.files &&
+      req.files["avatar_image"] &&
+      req.files["avatar_image"].length > 0
+    ) {
+      const avatarImageUrl = await uploadToCloudinary(
+        req.files.avatar_image[0],
+        "avatar_images"
+      );
+      updates.push("avatar_url = ?");
+      queryParams.push(avatarImageUrl);
+    }
+
+    if (
+      req.files &&
+      req.files["profile_images"] &&
+      req.files["profile_images"].length > 0
+    ) {
+      const profileImageUrls = await Promise.all(
+        req.files.profile_images.map((file) =>
+          uploadToCloudinary(file, "profile_images")
+        )
+      );
+
+      updates.push("profile_images = ?");
+      queryParams.push(JSON.stringify(profileImageUrls)); // Store as JSON string
+    }
+
+    // If there are no fields to update, return a specific message
+    if (updates.length === 0) {
+      return res
+        .status(200)
+        .json({ status: false, message: "Nothing to update" });
+    }
+
+    const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
+    queryParams.push(id);
+
+    // Execute the query
+    db.query(query, queryParams, function (err, result) {
       if (err) {
-        return res.status(500).json({status:false, error: err.message});
+        return res.status(500).send(err.message);
       }
 
-      let retUser = rows[0];
+      // Check if any rows were affected
+      if (result.affectedRows === 0) {
+        return res.status(404).send("User not found");
+      }
 
-      retUser.longitude = parseFloat(retUser.longitude);
-      retUser.latitude = parseFloat(retUser.latitude);
-      res.status(200).json({status: true, user: retUser});
+      // Fetch and return the updated user entity
+      db.query("SELECT * FROM users WHERE id = ?", [id], (err, rows) => {
+        if (err) {
+          return res.status(500).json({ status: false, error: err.message });
+        }
+
+        let retUser = rows[0];
+
+        retUser.longitude = parseFloat(retUser.longitude);
+        retUser.latitude = parseFloat(retUser.latitude);
+        res.status(200).json({ status: true, user: retUser });
+      });
     });
-  });
-});
+  }
+);
 
 /**
  * @swagger
@@ -1076,33 +1259,34 @@ app.put('/users/editUser/:id', upload.fields([
  */
 
 //This is the accept Request API for a user
-app.put('/users/acceptRequest',upload.none(),async(req, res)=>{
- 
-  const {receiverID, senderID} = req.body;
+app.put("/users/acceptRequest", upload.none(), async (req, res) => {
+  const { receiverID, senderID } = req.body;
 
-  const updates = ['status = ?'];
-  const queryParams = ['accepted'];
-  
-  const query = `UPDATE request SET ${updates.join(', ')} WHERE sender_id = ?`;
+  const updates = ["status = ?"];
+  const queryParams = ["accepted"];
+
+  const query = `UPDATE request SET ${updates.join(", ")} WHERE sender_id = ?`;
   queryParams.push(senderID);
 
-  query.concat(' AND receiver_id = ?');
+  query.concat(" AND receiver_id = ?");
   queryParams.push(receiverID);
-  
+
   // let query='SELECT * FROM request WHERE receiver_id = ? ';
   // let queryParams=[id];
-  
-  db.query(query,queryParams, (err, result) => {
+
+  db.query(query, queryParams, (err, result) => {
     if (err) {
       return res.status(500).send(err.message);
     }
 
     // Check if any rows were affected
     if (result.affectedRows === 0) {
-      return res.status(404).send('User not found');
+      return res.status(404).send("User not found");
     }
-    
-    res.status(200).json({ status: true, message: 'Request Accepted Successfully'});
+
+    res
+      .status(200)
+      .json({ status: true, message: "Request Accepted Successfully" });
   });
 });
 
@@ -1171,36 +1355,36 @@ app.put('/users/acceptRequest',upload.none(),async(req, res)=>{
  */
 
 //This is the reject Request API for a user
-app.put('/users/rejectRequest',upload.none(),async(req, res)=>{
- 
-  const {receiverID, senderID} = req.body;
+app.put("/users/rejectRequest", upload.none(), async (req, res) => {
+  const { receiverID, senderID } = req.body;
 
-  const updates = ['status = ?'];
-  const queryParams = ['rejected'];
-  
-  const query = `UPDATE request SET ${updates.join(', ')} WHERE sender_id = ?`;
+  const updates = ["status = ?"];
+  const queryParams = ["rejected"];
+
+  const query = `UPDATE request SET ${updates.join(", ")} WHERE sender_id = ?`;
   queryParams.push(senderID);
 
-  query.concat(' AND receiver_id = ?');
+  query.concat(" AND receiver_id = ?");
   queryParams.push(receiverID);
-  
+
   // let query='SELECT * FROM request WHERE receiver_id = ? ';
   // let queryParams=[id];
-  
-  db.query(query,queryParams, (err, result) => {
+
+  db.query(query, queryParams, (err, result) => {
     if (err) {
       return res.status(500).send(err.message);
     }
 
     // Check if any rows were affected
     if (result.affectedRows === 0) {
-      return res.status(404).send('User not found');
+      return res.status(404).send("User not found");
     }
-    
-    res.status(200).json({ status: true, message: 'Request Rejected Successfully'});
+
+    res
+      .status(200)
+      .json({ status: true, message: "Request Rejected Successfully" });
   });
 });
-
 
 /**
  * @swagger
@@ -1258,34 +1442,37 @@ app.put('/users/rejectRequest',upload.none(),async(req, res)=>{
  *               example: Internal Server Error
  */
 
-//API for removing friend 
-app.put('/users/removeFriend',upload.none(),async(req, res)=>{
- 
-  const {id} = req.query;
-  const {friendID} = req.body;
+//API for removing friend
+app.put("/users/removeFriend", upload.none(), async (req, res) => {
+  const { id } = req.query;
+  const { friendID } = req.body;
 
   console.log(friendID);
 
-  const updates = ['status = ?'];
-  let queryParams = ['rejected'];
-  
-  const query = `UPDATE request SET ${updates.join(', ')} WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)`;
+  const updates = ["status = ?"];
+  let queryParams = ["rejected"];
+
+  const query = `UPDATE request SET ${updates.join(
+    ", "
+  )} WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)`;
   queryParams.push(friendID, id, id, friendID);
 
-  query.concat(' AND status = ?');
-  queryParams.push('accepted');
-  
-  db.query(query,queryParams, (err, result) => {
+  query.concat(" AND status = ?");
+  queryParams.push("accepted");
+
+  db.query(query, queryParams, (err, result) => {
     if (err) {
       return res.status(500).send(err.message);
     }
 
     // Check if any rows were affected
     if (result.affectedRows === 0) {
-      return res.status(404).send('User not found');
+      return res.status(404).send("User not found");
     }
-    
-    res.status(200).json({ status: true, message: 'Friend Removed Successfully'});
+
+    res
+      .status(200)
+      .json({ status: true, message: "Friend Removed Successfully" });
   });
 });
 
@@ -1357,7 +1544,7 @@ app.put('/users/removeFriend',upload.none(),async(req, res)=>{
  *                 message:
  *                   type: string
  */
-app.delete('/dropTable/:tableName?', (req, res) => {
+app.delete("/dropTable/:tableName?", (req, res) => {
   const { tableName } = req.params;
 
   if (tableName) {
@@ -1366,12 +1553,21 @@ app.delete('/dropTable/:tableName?', (req, res) => {
 
     db.query(dropTableQuery, (err, result) => {
       if (err) {
-        if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
-          return res.status(400).json({ status: false, message: `Cannot drop table '${tableName}' referenced by a foreign key constraint.` });
+        if (
+          err.code === "ER_ROW_IS_REFERENCED_2" ||
+          err.code === "ER_ROW_IS_REFERENCED"
+        ) {
+          return res.status(400).json({
+            status: false,
+            message: `Cannot drop table '${tableName}' referenced by a foreign key constraint.`,
+          });
         }
         return res.status(500).json({ status: false, message: err.message });
       }
-      res.status(200).json({ status: true, message: `Table ${tableName} dropped successfully` });
+      res.status(200).json({
+        status: true,
+        message: `Table ${tableName} dropped successfully`,
+      });
     });
   } else {
     // Drop all tables
@@ -1382,15 +1578,20 @@ app.delete('/dropTable/:tableName?', (req, res) => {
         return res.status(500).json({ status: false, message: err.message });
       }
 
-      const dropTablePromises = tables.map(table => {
+      const dropTablePromises = tables.map((table) => {
         const tableName = table[`Tables_in_${db.config.database}`];
         const dropTableQuery = `DROP TABLE IF EXISTS \`${tableName}\``;
 
         return new Promise((resolve, reject) => {
           db.query(dropTableQuery, (err, result) => {
             if (err) {
-              if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
-                resolve(`Cannot drop table '${tableName}' referenced by a foreign key constraint.`);
+              if (
+                err.code === "ER_ROW_IS_REFERENCED_2" ||
+                err.code === "ER_ROW_IS_REFERENCED"
+              ) {
+                resolve(
+                  `Cannot drop table '${tableName}' referenced by a foreign key constraint.`
+                );
               } else {
                 reject(err);
               }
@@ -1402,12 +1603,15 @@ app.delete('/dropTable/:tableName?', (req, res) => {
       });
 
       Promise.all(dropTablePromises)
-        .then(messages => res.status(200).json({ status: true, message: messages.join(', ') }))
-        .catch(err => res.status(500).json({ status: false, message: err.message }));
+        .then((messages) =>
+          res.status(200).json({ status: true, message: messages.join(", ") })
+        )
+        .catch((err) =>
+          res.status(500).json({ status: false, message: err.message })
+        );
     });
   }
 });
-
 
 /**
  * @swagger
@@ -1430,7 +1634,7 @@ app.delete('/dropTable/:tableName?', (req, res) => {
  *             schema:
  *               type: object
  */
-app.delete('/deleteAllData/:tableName', (req, res) => {
+app.delete("/deleteAllData/:tableName", (req, res) => {
   const { tableName } = req.params;
   const deleteAllDataQuery = `DELETE FROM \`${tableName}\``;
 
@@ -1438,10 +1642,12 @@ app.delete('/deleteAllData/:tableName', (req, res) => {
     if (err) {
       return res.status(500).json({ status: false, message: err.message });
     }
-    res.status(200).json({ status: true, message: `All data from table ${tableName} deleted successfully` });
+    res.status(200).json({
+      status: true,
+      message: `All data from table ${tableName} deleted successfully`,
+    });
   });
 });
-
 
 /**
  * @swagger
@@ -1488,27 +1694,28 @@ app.delete('/deleteAllData/:tableName', (req, res) => {
  *               example: Internal Server Error
  */
 
-//API for removing friend 
-app.put('/users/removeUser',async(req, res)=>{
- 
-  const {id} = req.query;
+//API for removing friend
+app.put("/users/removeUser", async (req, res) => {
+  const { id } = req.query;
 
-  const updates = ['status = ?'];
-  let queryParams = ['NON_ACTIVE'];
-  
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  const updates = ["status = ?"];
+  let queryParams = ["NON_ACTIVE"];
+
+  const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
   queryParams.push(id);
 
-  db.query(query,queryParams, (err, result) => {
+  db.query(query, queryParams, (err, result) => {
     if (err) {
       return res.status(500).send(err.message);
     }
 
     // Check if any rows were affected
     if (result.affectedRows === 0) {
-      return res.status(404).send('User not found');
+      return res.status(404).send("User not found");
     }
-    
-    res.status(200).json({ status: true, message: 'User Removed Successfully'});
+
+    res
+      .status(200)
+      .json({ status: true, message: "User Removed Successfully" });
   });
 });
