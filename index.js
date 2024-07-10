@@ -107,8 +107,77 @@ io.on("connection", (socket) => {
   });
 });
 
+/**
+ * @swagger
+ * /send-message:
+ *   post:
+ *     summary: Send a new message
+ *     description: Send a new message from one user to another within a specific application.
+ *     tags: [Messages]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               app_id:
+ *                 type: string
+ *                 description: The ID of the application.
+ *                 example: "1"
+ *               from:
+ *                 type: string
+ *                 description: The ID of the user sending the message.
+ *                 example: "2"
+ *               to:
+ *                 type: string
+ *                 description: The ID of the user receiving the message.
+ *                 example: "4"
+ *               message:
+ *                 type: string
+ *                 description: The content of the message.
+ *                 example: "Hello, how are you?"
+ *     responses:
+ *       200:
+ *         description: Message sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "true"
+ *                 message:
+ *                   type: string
+ *                   example: "Message Sent Successfully"
+ *                 newMessage:
+ *                   type: object
+ *                   description: The details of the newly sent message
+ *       400:
+ *         description: Bad request, missing required fields
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "All fields are required"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error sending message"
+ */
+
 // POST API endpoint
-app.post("/send-message", (req, res) => {
+app.post("/send-message", upload.none(), (req, res) => {
   const { app_id, from, to, message } = req.body;
 
   if (!app_id || !from || !to || !message) {
@@ -182,11 +251,82 @@ app.get("/get-messages", (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /get-recentMessages:
+ *   get:
+ *     summary: Get recent messages
+ *     description: Retrieve the most recent messages sent and received by a user within a specific application.
+ *     tags:
+ *       - Messages
+ *     parameters:
+ *       - in: query
+ *         name: app_id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ID of the application.
+ *         example: "1"
+ *       - in: query
+ *         name: user_id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ID of the user.
+ *         example: "2"
+ *     responses:
+ *       200:
+ *         description: Recent messages retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   from_user:
+ *                     type: string
+ *                     description: The ID of the user who sent the message.
+ *                     example: "3"
+ *                   to_user:
+ *                     type: string
+ *                     description: The ID of the user who received the message.
+ *                     example: "2"
+ *                   message:
+ *                     type: string
+ *                     description: The content of the message.
+ *                     example: "Hello, how are you?"
+ *                   timestamp:
+ *                     type: string
+ *                     format: date-time
+ *                     description: The timestamp when the message was sent.
+ *                     example: "2024-07-10T05:32:44.000Z"
+ *       400:
+ *         description: Bad request, missing required parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "All fields are required"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error retrieving messages"
+ */
 app.get("/get-recentMessages", (req, res) => {
   const { app_id, user_id } = req.query;
 
   const query = `
-    SELECT from_user, message, timestamp
+    SELECT from_user, to_user, message, timestamp
     FROM (
       SELECT 
         m.from_user, m.to_user, m.message, m.timestamp,
