@@ -489,8 +489,8 @@ app.get("/users/exists/:contact", (req, res) => {
   const { contact } = req.params;
 
   db.query(
-    "SELECT * FROM users WHERE contact = ?",
-    [contact],
+    "SELECT * FROM users WHERE contact = ? AND status = ?",
+    [contact, "ACTIVE"],
     (err, result) => {
       if (err) {
         return res.status(500).json({ status: false, message: err.message });
