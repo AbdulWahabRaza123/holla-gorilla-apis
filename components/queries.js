@@ -1,4 +1,3 @@
-
 const setupQueries = `
   CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -16,6 +15,7 @@ const setupQueries = `
     document_url VARCHAR(255),
     education VARCHAR(255),
     status ENUM('ACTIVE', 'NON_ACTIVE') DEFAULT 'ACTIVE',
+    online_status ENUM('ONLINE','OFFLINE') DEFAULT 'OFFLINE',
     subscribed BOOLEAN DEFAULT false,
     subscription_expiry DATE
 );
@@ -30,6 +30,13 @@ const setupQueries = `
     FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+ CREATE TABLE IF NOT EXISTS skip(
+    user_id INT NOT NULL,
+    skipped_user_id INT NOT NULL,
+    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (skipped_user_id) REFERENCES users(id)
+ );
 `;
 
 module.exports = setupQueries;

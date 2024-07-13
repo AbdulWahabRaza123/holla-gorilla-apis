@@ -251,6 +251,35 @@ app.get("/get-messages", (req, res) => {
   });
 });
 
+app.get("/getUserMessages", async (req, res) => {
+  try {
+    const { userID, chatterID } = req.query;
+    let query = `SELECT * FROM messages WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?) WHERE app_id = ?`;
+    let queryParams = [userID, chatterID, chatterID, userID, 1];
+    db.query(query, queryParams, (err, result) => {
+      if (err) {
+        return res.status(500).json({
+          status: false,
+          message: "Could Not get Messages",
+          error: err.message,
+        });
+      }
+      let retMessages = result.map((msg) => {
+        return msg;
+      });
+      res.status(200).json({
+        status: true,
+        message: "Chat fetched successfully",
+        retMessages,
+      });
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ status: false, message: "the API FAILED", error: error.message });
+  }
+});
+
 /**
  * @swagger
  * /get-recentMessages:
@@ -613,24 +642,35 @@ app.get("/", (req, res) => {
  *       500:
  *         description: Internal server error
  */
-//searching based on filter, filters to be passed as parameters
+//searching based on filter, filters to be passed as parameters //Mat
 app.get("/users/getUsers", async (req, res) => {
-  //const id = req.params.id;
   const { id, latitude, longitude, gender, ageRange, interests, radRange } =
-    req?.query;
+    req.query;
 
   // Start with a base query
-  let query = "SELECT * FROM users WHERE id != ? ";
-  let queryParams = [];
-  queryParams.push(id);
+  let query = `
+    SELECT * FROM users 
+    WHERE id != ? 
+    AND id NOT IN (
+      SELECT receiver_id FROM request WHERE sender_id = ? AND status = 'accepted'
+      UNION
+      SELECT sender_id FROM request WHERE receiver_id = ? AND status = 'accepted'
+      UNION
+      SELECT receiver_id FROM request WHERE sender_id = ? AND status = 'rejected'
+      UNION
+      SELECT sender_id FROM request WHERE receiver_id = ? AND status = 'rejected'
+      UNION
+      SELECT skipped_user_id FROM skip WHERE user_id = ?
+    )
+  `;
+  let queryParams = [id, id, id, id, id, id, id];
 
   // Handle gender filter
   if (gender) {
     console.log("Gender was passed");
     const genderArr = gender.split(",");
-    query +=
-      " AND (" + genderArr.map((_) => "gender LIKE ?").join(" OR ") + ")";
-    queryParams = queryParams.concat(genderArr.map((gender) => `%${gender}%`));
+    query += " AND (" + genderArr.map(() => "gender LIKE ?").join(" OR ") + ")";
+    queryParams = queryParams.concat(genderArr.map((g) => `%${g}%`));
   }
 
   // Handle age range filter
@@ -643,14 +683,17 @@ app.get("/users/getUsers", async (req, res) => {
       new Date().setFullYear(new Date().getFullYear() - minAge)
     );
     query += " AND date_of_birth BETWEEN ? AND ?";
-    queryParams.push(minDob.toISOString(), maxDob.toISOString());
+    queryParams.push(
+      minDob.toISOString().split("T")[0],
+      maxDob.toISOString().split("T")[0]
+    );
   }
 
   // Handle interests filter
   if (interests) {
     const interestsArray = interests.split(",");
     query +=
-      " AND (" + interestsArray.map((_) => "likes LIKE ?").join(" OR ") + ")";
+      " AND (" + interestsArray.map(() => "likes LIKE ?").join(" OR ") + ")";
     queryParams = queryParams.concat(
       interestsArray.map((interest) => `%${interest}%`)
     );
@@ -700,6 +743,8 @@ app.get("/users/getUsers", async (req, res) => {
     res.status(200).json(rows);
   });
 });
+
+// app.post(req, res);
 
 /**
  * @swagger
@@ -1891,3 +1936,135 @@ app.put("/users/removeUser", async (req, res) => {
       .json({ status: true, message: "User Removed Successfully" });
   });
 });
+
+// app.post("/users/matchUser", upload.none(), (req, res) => {
+//   const { user_id, matched_user_id } = req.body;
+//   console.log("user_id:", user_id, "matched user id: ", matched_user_id);
+
+//   if (!user_id || !matched_user_id) {
+//     return res
+//       .status(400)
+//       .json({ message: "Both user_id and matched_user_id are required" });
+//   }
+
+//   const query = "INSERT INTO matches (user_id, matched_user_id) VALUES (?, ?)";
+//   const values = [user_id, matched_user_id];
+
+//   db.query(query, values, (error, results) => {
+//     if (error) {
+//       console.error("Error inserting match: ", error);
+//       return res.status(500).json({ message: "Failed to create match" });
+//     }
+//     res.status(201).json({
+//       message: "Match created successfully",
+//     });
+//   });
+// });
+
+app.put("/users/setOnlineStatus", async (req, res) => {
+  const { id, flag } = req.body;
+  const query = `UPDATE users SET online_status = ? WHERE id = ?`;
+  const queryParams = [flag, id];
+  db.query(query, queryParams, (err, result) => {
+    if (err) {
+      return res.status(500).send(err.message);
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).send("User not found");
+    }
+    res
+      .status(500)
+      .json({ status: true, message: `Status Set to ${flag} Successfully` });
+  });
+});
+
+/**
+ * @swagger
+ * /users/skipUser:
+ *   post:
+ *     summary: Skip a user
+ *     description: Adds a user to the skip list, indicating that the current user has skipped this user.
+ *     tags:
+ *       - Users
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *               - skipped_user_id
+ *             properties:
+ *               user_id:
+ *                 type: integer
+ *                 description: The ID of the user who is skipping another user
+ *                 example: 1
+ *               skipped_user_id:
+ *                 type: integer
+ *                 description: The ID of the user being skipped
+ *                 example: 2
+ *     responses:
+ *       201:
+ *         description: User skipped successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "true"
+ *                 message:
+ *                   type: string
+ *                   example: "User skipped successfully"
+ *       400:
+ *         description: Bad request. Missing required parameters.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Both user_id and skipped_user_id are required"
+ *       500:
+ *         description: Internal server error. Failed to skip user.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to skip user {error.message}"
+ */
+
+app.post("/users/skipUser", upload.none(), async (req, res) => {
+  const { user_id, skipped_user_id } = req.body;
+  console.log("user_id", skipped_user_id);
+
+  if (!user_id || !skipped_user_id) {
+    return res
+      .status(400)
+      .json({ message: "Both user_id and skipped_user_id are required" });
+  }
+
+  const query = "INSERT INTO skip (user_id, skipped_user_id) VALUES (?, ?)";
+  const values = [user_id, skipped_user_id];
+
+  db.query(query, values, (error, results) => {
+    if (error) {
+      console.error("Error inserting skip record: ", error);
+      return res
+        .status(500)
+        .json({ message: `Failed to skip user ${error.message}` });
+    }
+    res.status(201).json({
+      status: "true",
+      message: "User skipped successfully",
+    });
+  });
+});
+
+// app.post();
