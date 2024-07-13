@@ -92,6 +92,13 @@ const sendMessage = (app_id, from, to, message, callback) => {
 io.on("connection", (socket) => {
   console.log("New client connected");
 
+  //event to join a room
+  socket.on("joinRoom", ({ room }) => {
+    socket.join(room);
+    console.log(`User joined room: ${room}`);
+    socket.emit("Joined");
+  });
+
   socket.on("sendMessage", (data) => {
     const { app_id, from, to, message } = data;
     sendMessage(app_id, from, to, message, (err, newMessage) => {
