@@ -2074,4 +2074,64 @@ app.post("/users/skipUser", upload.none(), async (req, res) => {
   });
 });
 
-// app.post();
+app.post("/users/addPayment", upload.none(), (req, res) => {
+  const { user_id, date, reason } = req.body;
+
+  //console.log("Received data:", { user_id, date, reason });
+
+  if (!user_id || !date || !reason) {
+    return res.status(400).json({
+      message: "Please provide all the attributes: user_id, date, reason",
+    });
+  }
+
+  const parsedDate = new Date(date);
+  if (isNaN(parsedDate)) {
+    return res.status(400).json({
+      message: "Invalid date format",
+    });
+  }
+  const formattedDate = parsedDate.toISOString().slice(0, 19).replace("T", " ");
+
+  const subscriptionExpiryDate = addOneMonth(parsedDate)
+    .toISOString()
+    .slice(0, 10);
+
+  const insertPaymentQuery =
+    "INSERT INTO payment_history (user_id, date, reason) VALUES (?, ?, ?)";
+  const insertPaymentValues = [user_id, formattedDate, reason];
+
+  db.query(insertPaymentQuery, insertPaymentValues, (error, results) => {
+    if (error) {
+      console.error("Error inserting payment record:", error);
+      return res.status(500).json({
+        message: `Failed to add payment record: ${error.message}`,
+      });
+    }
+
+    // Update user subscription status
+    const updateUserQuery =
+      "UPDATE users SET subscribed = ?, subscription_expiry = ? WHERE id = ?";
+    const updateUserValues = [true, subscriptionExpiryDate, user_id];
+
+    db.query(updateUserQuery, updateUserValues, (error, results) => {
+      if (error) {
+        console.error("Error updating user record:", error);
+        return res.status(500).json({
+          message: `Failed to update user subscription: ${error.message}`,
+        });
+      }
+
+      res.status(201).json({
+        status: "true",
+        message:
+          "Payment record added and user subscription updated successfully",
+      });
+    });
+  });
+});
+function addOneMonth(date) {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + 1);
+  return result;
+}

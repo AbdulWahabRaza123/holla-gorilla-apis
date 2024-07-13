@@ -37,6 +37,14 @@ const setupQueries = `
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (skipped_user_id) REFERENCES users(id)
  );
+
+ CREATE TABLE IF NOT EXISTS payment_history(
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ user_id INT NOT NULL,
+ date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ reason varchar(255) NOT NULL,
+ FOREIGN KEY (user_id) REFERENCES users(id)
+ )
 `;
 
 module.exports = setupQueries;
