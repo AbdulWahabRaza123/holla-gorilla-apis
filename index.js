@@ -4,6 +4,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const http = require("http");
 const socketIo = require("socket.io");
+const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const cors = require("cors"); // Import the CORS middleware
 
@@ -60,6 +61,7 @@ const {
   calculateDistance,
   uploadToCloudinary,
   validateSignup,
+  authenticateToken,
 } = require("./utils");
 const { machine } = require("os");
 
@@ -184,7 +186,7 @@ io.on("connection", (socket) => {
  */
 
 // POST API endpoint
-app.post("/send-message", upload.none(), (req, res) => {
+app.post("/send-message", upload.none(), authenticateToken, (req, res) => {
   const { app_id, from, to, message } = req.body;
 
   if (!app_id || !from || !to || !message) {
@@ -241,7 +243,7 @@ app.post("/send-message", upload.none(), (req, res) => {
  *               items:
  *                 type: object
  */
-app.get("/get-messages", (req, res) => {
+app.get("/get-messages", authenticateToken, (req, res) => {
   const { app_id, user1, user2 } = req.query;
   const query = `
     SELECT * FROM messages 
@@ -258,7 +260,7 @@ app.get("/get-messages", (req, res) => {
   });
 });
 
-app.get("/getUserMessages", async (req, res) => {
+app.get("/getUserMessages", authenticateToken, async (req, res) => {
   try {
     const { userID, chatterID } = req.query;
     let query = `SELECT * FROM messages WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?) WHERE app_id = ?`;
@@ -370,7 +372,7 @@ const queryDb = (query, params) => {
   });
 };
 
-app.get("/get-recentMessages", async (req, res) => {
+app.get("/get-recentMessages", authenticateToken, async (req, res) => {
   const { app_id, user_id } = req.query;
 
   const query = `
@@ -431,7 +433,7 @@ app.get("/get-recentMessages", async (req, res) => {
  *               items:
  *                 type: object
  */
-app.get("/users", (req, res) => {
+app.get("/users", authenticateToken, (req, res) => {
   const query = "SELECT * FROM users WHERE status = ?";
   const queryParams = ["ACTIVE"];
 
@@ -477,7 +479,7 @@ app.get("/users", (req, res) => {
  *             schema:
  *               type: object
  */
-app.get("/users/id/:id", (req, res) => {
+app.get("/users/id/:id", authenticateToken, (req, res) => {
   const { id } = req.params;
 
   db.query("SELECT * FROM users WHERE id = ?", [id], (err, result) => {
@@ -539,10 +541,17 @@ app.get("/users/exists/:contact", (req, res) => {
 
       let user = result[0];
 
+      const token = jwt.sign(
+        { contact: user.contact },
+        process.env.JWT_SECRET_KEY
+      );
+
       user.longitude = parseFloat(user.longitude);
       user.latitude = parseFloat(user.latitude);
 
-      res.status(200).json({ status: true, message: "User exists", user });
+      res
+        .status(200)
+        .json({ status: true, message: "User exists", user, token });
     }
   );
 });
@@ -650,7 +659,7 @@ app.get("/", (req, res) => {
  *         description: Internal server error
  */
 //searching based on filter, filters to be passed as parameters //Mat
-app.get("/users/getUsers", async (req, res) => {
+app.get("/users/getUsers", authenticateToken, async (req, res) => {
   const { id, latitude, longitude, gender, ageRange, interests, radRange } =
     req.query;
 
@@ -797,7 +806,7 @@ app.get("/users/getUsers", async (req, res) => {
  */
 
 //This is the get all Requests API
-app.get("/users/allRequests", async (req, res) => {
+app.get("/users/allRequests", authenticateToken, async (req, res) => {
   db.query("SELECT * FROM request", (err, result) => {
     if (err) {
       return res
@@ -867,7 +876,7 @@ app.get("/users/allRequests", async (req, res) => {
  *       - apiKeyAuth: []
  */
 //This is the get Request API for a user
-app.get("/users/getRequests", async (req, res) => {
+app.get("/users/getRequests", authenticateToken, async (req, res) => {
   const { id } = req.query;
 
   let query = "SELECT * FROM request WHERE receiver_id = ? ";
@@ -981,7 +990,7 @@ app.get("/users/getRequests", async (req, res) => {
  */
 
 //Get Friend Lists
-app.get("/users/getFriendList", async (req, res) => {
+app.get("/users/getFriendList", authenticateToken, async (req, res) => {
   const { id } = req.query;
 
   let query = `
@@ -1115,12 +1124,12 @@ app.post(
         gender: gender,
         bio: bio,
         date_of_birth: dob,
-        likes: JSON.stringify(interestsList), // Save as a JSON string in the database
-        latitude: parseFloat(latitude), // Convert latitude to float
-        longitude: parseFloat(longitude), // Convert longitude to float
+        likes: JSON.stringify(interestsList),
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
         profile_pic_url: profilePicUrl,
         avatar_url: avatarImageUrl,
-        profile_images: JSON.stringify(profileImageUrls), // Save as a JSON string in the database
+        profile_images: JSON.stringify(profileImageUrls),
         document_url: documentURl,
         education: education,
         status: "ACTIVE",
@@ -1134,6 +1143,12 @@ app.post(
             .status(500)
             .json({ status: false, message: err.message, user: null });
         }
+
+        const token = jwt.sign(
+          { contact: contact },
+          process.env.JWT_SECRET_KEY
+        );
+
         res.status(201).json({
           status: true,
           message: "User signed up successfully",
@@ -1142,6 +1157,7 @@ app.post(
             ...user,
             likes: interestsList, // Return interests as an array
             profile_images: profileImageUrls, // Return profile_images as an array
+            token: token,
           },
         });
       });
@@ -1208,27 +1224,32 @@ app.post(
  */
 
 //This is the send Request API
-app.post("/users/sendRequest", upload.none(), async (req, res) => {
-  const { senderID, receiverID } = req.body;
+app.post(
+  "/users/sendRequest",
+  upload.none(),
+  authenticateToken,
+  async (req, res) => {
+    const { senderID, receiverID } = req.body;
 
-  const sendingRequest = {
-    sender_id: senderID,
-    receiver_id: receiverID,
-    status: "pending",
-  };
+    const sendingRequest = {
+      sender_id: senderID,
+      receiver_id: receiverID,
+      status: "pending",
+    };
 
-  db.query("INSERT INTO request SET ?", sendingRequest, (err, result) => {
-    if (err) {
-      return res
-        .status(500)
-        .json({ status: false, message: err.message, sendingRequest: null });
-    }
-    res.status(201).json({
-      status: true,
-      message: "Request sent Successfully",
+    db.query("INSERT INTO request SET ?", sendingRequest, (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ status: false, message: err.message, sendingRequest: null });
+      }
+      res.status(201).json({
+        status: true,
+        message: "Request sent Successfully",
+      });
     });
-  });
-});
+  }
+);
 
 // PUT APIs
 /**
@@ -1284,6 +1305,7 @@ app.put(
     { name: "avatar_image", maxCount: 1 },
     { name: "profile_images", maxCount: 10 },
   ]),
+  authenticateToken,
   async (req, res) => {
     const id = req.params.id;
     const {
@@ -1483,36 +1505,43 @@ app.put(
  */
 
 //This is the accept Request API for a user
-app.put("/users/acceptRequest", upload.none(), async (req, res) => {
-  const { receiverID, senderID } = req.body;
+app.put(
+  "/users/acceptRequest",
+  upload.none(),
+  authenticateToken,
+  async (req, res) => {
+    const { receiverID, senderID } = req.body;
 
-  const updates = ["status = ?"];
-  const queryParams = ["accepted"];
+    const updates = ["status = ?"];
+    const queryParams = ["accepted"];
 
-  const query = `UPDATE request SET ${updates.join(", ")} WHERE sender_id = ?`;
-  queryParams.push(senderID);
+    const query = `UPDATE request SET ${updates.join(
+      ", "
+    )} WHERE sender_id = ?`;
+    queryParams.push(senderID);
 
-  query.concat(" AND receiver_id = ?");
-  queryParams.push(receiverID);
+    query.concat(" AND receiver_id = ?");
+    queryParams.push(receiverID);
 
-  // let query='SELECT * FROM request WHERE receiver_id = ? ';
-  // let queryParams=[id];
+    // let query='SELECT * FROM request WHERE receiver_id = ? ';
+    // let queryParams=[id];
 
-  db.query(query, queryParams, (err, result) => {
-    if (err) {
-      return res.status(500).send(err.message);
-    }
+    db.query(query, queryParams, (err, result) => {
+      if (err) {
+        return res.status(500).send(err.message);
+      }
 
-    // Check if any rows were affected
-    if (result.affectedRows === 0) {
-      return res.status(404).send("User not found");
-    }
+      // Check if any rows were affected
+      if (result.affectedRows === 0) {
+        return res.status(404).send("User not found");
+      }
 
-    res
-      .status(200)
-      .json({ status: true, message: "Request Accepted Successfully" });
-  });
-});
+      res
+        .status(200)
+        .json({ status: true, message: "Request Accepted Successfully" });
+    });
+  }
+);
 
 /**
  * @swagger
@@ -1579,36 +1608,43 @@ app.put("/users/acceptRequest", upload.none(), async (req, res) => {
  */
 
 //This is the reject Request API for a user
-app.put("/users/rejectRequest", upload.none(), async (req, res) => {
-  const { receiverID, senderID } = req.body;
+app.put(
+  "/users/rejectRequest",
+  upload.none(),
+  authenticateToken,
+  async (req, res) => {
+    const { receiverID, senderID } = req.body;
 
-  const updates = ["status = ?"];
-  const queryParams = ["rejected"];
+    const updates = ["status = ?"];
+    const queryParams = ["rejected"];
 
-  const query = `UPDATE request SET ${updates.join(", ")} WHERE sender_id = ?`;
-  queryParams.push(senderID);
+    const query = `UPDATE request SET ${updates.join(
+      ", "
+    )} WHERE sender_id = ?`;
+    queryParams.push(senderID);
 
-  query.concat(" AND receiver_id = ?");
-  queryParams.push(receiverID);
+    query.concat(" AND receiver_id = ?");
+    queryParams.push(receiverID);
 
-  // let query='SELECT * FROM request WHERE receiver_id = ? ';
-  // let queryParams=[id];
+    // let query='SELECT * FROM request WHERE receiver_id = ? ';
+    // let queryParams=[id];
 
-  db.query(query, queryParams, (err, result) => {
-    if (err) {
-      return res.status(500).send(err.message);
-    }
+    db.query(query, queryParams, (err, result) => {
+      if (err) {
+        return res.status(500).send(err.message);
+      }
 
-    // Check if any rows were affected
-    if (result.affectedRows === 0) {
-      return res.status(404).send("User not found");
-    }
+      // Check if any rows were affected
+      if (result.affectedRows === 0) {
+        return res.status(404).send("User not found");
+      }
 
-    res
-      .status(200)
-      .json({ status: true, message: "Request Rejected Successfully" });
-  });
-});
+      res
+        .status(200)
+        .json({ status: true, message: "Request Rejected Successfully" });
+    });
+  }
+);
 
 /**
  * @swagger
@@ -1667,38 +1703,43 @@ app.put("/users/rejectRequest", upload.none(), async (req, res) => {
  */
 
 //API for removing friend
-app.put("/users/removeFriend", upload.none(), async (req, res) => {
-  const { id } = req.query;
-  const { friendID } = req.body;
+app.put(
+  "/users/removeFriend",
+  upload.none(),
+  authenticateToken,
+  async (req, res) => {
+    const { id } = req.query;
+    const { friendID } = req.body;
 
-  console.log(friendID);
+    console.log(friendID);
 
-  const updates = ["status = ?"];
-  let queryParams = ["rejected"];
+    const updates = ["status = ?"];
+    let queryParams = ["rejected"];
 
-  const query = `UPDATE request SET ${updates.join(
-    ", "
-  )} WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)`;
-  queryParams.push(friendID, id, id, friendID);
+    const query = `UPDATE request SET ${updates.join(
+      ", "
+    )} WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)`;
+    queryParams.push(friendID, id, id, friendID);
 
-  query.concat(" AND status = ?");
-  queryParams.push("accepted");
+    query.concat(" AND status = ?");
+    queryParams.push("accepted");
 
-  db.query(query, queryParams, (err, result) => {
-    if (err) {
-      return res.status(500).send(err.message);
-    }
+    db.query(query, queryParams, (err, result) => {
+      if (err) {
+        return res.status(500).send(err.message);
+      }
 
-    // Check if any rows were affected
-    if (result.affectedRows === 0) {
-      return res.status(404).send("User not found");
-    }
+      // Check if any rows were affected
+      if (result.affectedRows === 0) {
+        return res.status(404).send("User not found");
+      }
 
-    res
-      .status(200)
-      .json({ status: true, message: "Friend Removed Successfully" });
-  });
-});
+      res
+        .status(200)
+        .json({ status: true, message: "Friend Removed Successfully" });
+    });
+  }
+);
 
 // DELETE APIs
 /**
@@ -1919,7 +1960,7 @@ app.delete("/deleteAllData/:tableName", (req, res) => {
  */
 
 //API for removing friend
-app.put("/users/removeUser", async (req, res) => {
+app.put("/users/removeUser", authenticateToken, async (req, res) => {
   const { id } = req.query;
 
   const updates = ["status = ?"];
@@ -2047,34 +2088,108 @@ app.put("/users/setOnlineStatus", async (req, res) => {
  *                   example: "Failed to skip user {error.message}"
  */
 
-app.post("/users/skipUser", upload.none(), async (req, res) => {
-  const { user_id, skipped_user_id } = req.body;
-  console.log("user_id", skipped_user_id);
+app.post(
+  "/users/skipUser",
+  upload.none(),
+  authenticateToken,
+  async (req, res) => {
+    const { user_id, skipped_user_id } = req.body;
+    console.log("user_id", skipped_user_id);
 
-  if (!user_id || !skipped_user_id) {
-    return res
-      .status(400)
-      .json({ message: "Both user_id and skipped_user_id are required" });
-  }
-
-  const query = "INSERT INTO skip (user_id, skipped_user_id) VALUES (?, ?)";
-  const values = [user_id, skipped_user_id];
-
-  db.query(query, values, (error, results) => {
-    if (error) {
-      console.error("Error inserting skip record: ", error);
+    if (!user_id || !skipped_user_id) {
       return res
-        .status(500)
-        .json({ message: `Failed to skip user ${error.message}` });
+        .status(400)
+        .json({ message: "Both user_id and skipped_user_id are required" });
     }
-    res.status(201).json({
-      status: "true",
-      message: "User skipped successfully",
-    });
-  });
-});
 
-app.post("/users/addPayment", upload.none(), (req, res) => {
+    const query = "INSERT INTO skip (user_id, skipped_user_id) VALUES (?, ?)";
+    const values = [user_id, skipped_user_id];
+
+    db.query(query, values, (error, results) => {
+      if (error) {
+        console.error("Error inserting skip record: ", error);
+        return res
+          .status(500)
+          .json({ message: `Failed to skip user ${error.message}` });
+      }
+      res.status(201).json({
+        status: "true",
+        message: "User skipped successfully",
+      });
+    });
+  }
+);
+
+/**
+ * @swagger
+ * /users/addPayment:
+ *   post:
+ *     summary: Add a payment record and update user subscription status.
+ *     tags:
+ *       - Users
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user_id
+ *               - date
+ *               - reason
+ *             properties:
+ *               user_id:
+ *                 type: integer
+ *                 description: ID of the user.
+ *                 example: 1
+ *               date:
+ *                 type: string
+ *                 format: date
+ *                 description: Payment date in YYYY-MM-DD format.
+ *                 example: 2024-07-15
+ *               reason:
+ *                 type: string
+ *                 description: Reason for the payment.
+ *                 example: "Monthly subscription fee"
+ *     responses:
+ *       201:
+ *         description: Payment record added and user subscription updated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "true"
+ *                 message:
+ *                   type: string
+ *                   example: "Payment record added and user subscription updated successfully"
+ *       400:
+ *         description: Bad request. Missing or invalid attributes.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Please provide all the attributes: user_id, date, reason"
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to add payment record: [error message]"
+ */
+
+app.post("/users/addPayment", upload.none(), authenticateToken, (req, res) => {
   const { user_id, date, reason } = req.body;
 
   //console.log("Received data:", { user_id, date, reason });
