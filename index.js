@@ -21,7 +21,8 @@ const io = socketIo(server, {
   }
 });
 const wssPort = 6060;
-const wss = new WebSocket.Server({ server, path: '/websocket', port: wssPort });
+// const wss = new WebSocket.Server({ server, path: '/websocket', port: wssPort });
+const wss = new WebSocket.Server({ server, path: '/websocket' });
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
