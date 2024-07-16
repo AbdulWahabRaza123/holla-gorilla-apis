@@ -95,28 +95,28 @@ io.on("connection", (socket) => {
   console.log("New client connected");
 
   //event to join a room
-  socket.on("joinRoom", ({ room }) => {
-    socket.join(room);
-    console.log(`User joined room: ${room}`);
-    socket.emit("Joined");
-  });
+socket.on("joinRoom", ({ room }) => {
+  socket.join(room);
+  console.log(`User joined room: ${room}`);
+  socket.emit("Joined");
+});
+
 
   socket.on("sendMessage", (data) => {
-    const { app_id, from, to, message } = data;
-    sendMessage(app_id, from, to, message, (err, newMessage) => {
-      if (err) {
-        socket.emit("messageError", "Error sending message");
-        return;
-      }
-     io.to(`room_${from}`).emit("newMessage", newMessage);
-     io.to(`room_${to}`).emit("newMessage", newMessage);
-    });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
+  console.log("sendMessage event received:", data);
+  const { app_id, from, to, message } = data;
+  sendMessage(app_id, from, to, message, (err, newMessage) => {
+    if (err) {
+      console.log("Error sending message:", err);
+      socket.emit("messageError", "Error sending message");
+      return;
+    }
+    console.log("Message sent successfully:", newMessage);
+    io.to(`room_${from}`).emit("newMessage", newMessage);
+    io.to(`room_${to}`).emit("newMessage", newMessage);
   });
 });
+
 
 /**
  * @swagger
