@@ -2124,15 +2124,14 @@ app.post(
  * @swagger
  * /users/addPayment:
  *   post:
- *     summary: Add a payment record and update user subscription status.
+ *     summary: Add a payment record and update the user's subscription status.
  *     tags:
  *       - Users
- *     security:
- *       - BearerAuth: []
+ *     description: This endpoint allows you to add a payment record for a user and update their subscription status.
  *     requestBody:
  *       required: true
  *       content:
- *         application/x-www-form-urlencoded:
+ *         application/json:
  *           schema:
  *             type: object
  *             required:
@@ -2142,17 +2141,17 @@ app.post(
  *             properties:
  *               user_id:
  *                 type: integer
- *                 description: ID of the user.
+ *                 description: The ID of the user.
  *                 example: 1
  *               date:
  *                 type: string
- *                 format: date
- *                 description: Payment date in YYYY-MM-DD format.
- *                 example: 2024-07-15
+ *                 format: date-time
+ *                 description: The date of the payment.
+ *                 example: "2024-07-16T12:00:00Z"
  *               reason:
  *                 type: string
- *                 description: Reason for the payment.
- *                 example: "Monthly subscription fee"
+ *                 description: The reason for the payment.
+ *                 example: "Subscription renewal"
  *     responses:
  *       201:
  *         description: Payment record added and user subscription updated successfully.
@@ -2167,8 +2166,36 @@ app.post(
  *                 message:
  *                   type: string
  *                   example: "Payment record added and user subscription updated successfully"
+ *                 user:
+ *                   type: object
+ *                   description: The updated user entity.
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     username:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     subscribed:
+ *                       type: boolean
+ *                     subscription_expiry:
+ *                       type: string
+ *                       format: date
+ *                 paymentRecord:
+ *                   type: object
+ *                   description: The payment record that was added.
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     user_id:
+ *                       type: integer
+ *                     date:
+ *                       type: string
+ *                       format: date-time
+ *                     reason:
+ *                       type: string
  *       400:
- *         description: Bad request. Missing or invalid attributes.
+ *         description: Bad Request. Missing or invalid parameters.
  *         content:
  *           application/json:
  *             schema:
@@ -2177,8 +2204,8 @@ app.post(
  *                 message:
  *                   type: string
  *                   example: "Please provide all the attributes: user_id, date, reason"
- *       500:
- *         description: Internal server error.
+ *       404:
+ *         description: User not found.
  *         content:
  *           application/json:
  *             schema:
@@ -2186,13 +2213,21 @@ app.post(
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Failed to add payment record: [error message]"
+ *                   example: "User not found"
+ *       500:
+ *         description: Internal Server Error. Failed to add payment record or update user subscription.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to add payment record: error message"
  */
 
 app.post("/users/addPayment", upload.none(), authenticateToken, (req, res) => {
   const { user_id, date, reason } = req.body;
-
-  //console.log("Received data:", { user_id, date, reason });
 
   if (!user_id || !date || !reason) {
     return res.status(400).json({
@@ -2216,7 +2251,7 @@ app.post("/users/addPayment", upload.none(), authenticateToken, (req, res) => {
     "INSERT INTO payment_history (user_id, date, reason) VALUES (?, ?, ?)";
   const insertPaymentValues = [user_id, formattedDate, reason];
 
-  db.query(insertPaymentQuery, insertPaymentValues, (error, results) => {
+  db.query(insertPaymentQuery, insertPaymentValues, (error, paymentResults) => {
     if (error) {
       console.error("Error inserting payment record:", error);
       return res.status(500).json({
@@ -2229,7 +2264,7 @@ app.post("/users/addPayment", upload.none(), authenticateToken, (req, res) => {
       "UPDATE users SET subscribed = ?, subscription_expiry = ? WHERE id = ?";
     const updateUserValues = [true, subscriptionExpiryDate, user_id];
 
-    db.query(updateUserQuery, updateUserValues, (error, results) => {
+    db.query(updateUserQuery, updateUserValues, (error, updateResults) => {
       if (error) {
         console.error("Error updating user record:", error);
         return res.status(500).json({
@@ -2237,14 +2272,42 @@ app.post("/users/addPayment", upload.none(), authenticateToken, (req, res) => {
         });
       }
 
-      res.status(201).json({
-        status: "true",
-        message:
-          "Payment record added and user subscription updated successfully",
+      // Fetch the updated user data
+      const fetchUserQuery = "SELECT * FROM users WHERE id = ?";
+      db.query(fetchUserQuery, [user_id], (error, userResults) => {
+        if (error) {
+          console.error("Error fetching user data:", error);
+          return res.status(500).json({
+            message: `Failed to fetch user data: ${error.message}`,
+          });
+        }
+
+        if (userResults.length === 0) {
+          return res.status(404).json({
+            message: "User not found",
+          });
+        }
+
+        const user = userResults[0];
+        const paymentRecord = {
+          id: paymentResults.insertId,
+          user_id,
+          date: formattedDate,
+          reason,
+        };
+
+        res.status(201).json({
+          status: "true",
+          message:
+            "Payment record added and user subscription updated successfully",
+          user,
+          paymentRecord,
+        });
       });
     });
   });
 });
+
 function addOneMonth(date) {
   const result = new Date(date);
   result.setMonth(result.getMonth() + 1);
