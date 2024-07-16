@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const WebSocket = require('ws');
+
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -19,6 +21,8 @@ const io = socketIo(server, {
     methods: ['GET', 'POST']
   }
 });
+const wss = new WebSocket.Server({ server, path: '/ws' });
+
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
@@ -83,6 +87,79 @@ io.on("connection", (socket) => {
     });
   });
 });
+let webSockets = {};
+
+wss.on('connection', (ws, req) => {
+  const userID = req.url.split('/').pop();
+  webSockets[userID] = ws;
+  console.log(`User ${userID} connected`);
+
+  // Load previous messages
+  const loadMessagesQuery = `
+    SELECT * FROM messages 
+    WHERE from_user = ? OR to_user = ?
+    ORDER BY timestamp ASC
+  `;
+  db.query(loadMessagesQuery, [userID, userID], (err, messages) => {
+    if (err) {
+      console.error('Error loading messages:', err);
+      return;
+    }
+    ws.send(JSON.stringify({ type: 'previousMessages', messages }));
+  });
+
+  ws.on('message', async (message) => {
+    const datastring = message.toString();
+    if (datastring.charAt(0) == "{") {
+      const data = JSON.parse(datastring.replace(/\'/g, '"'));
+      if (data.auth === "addauthkeyifrequired") {
+        if (data.cmd === "send") {
+          const receiverWs = webSockets[data.to];
+          if (receiverWs) {
+            const cdata = JSON.stringify({
+              cmd: data.cmd,
+              from: data.from,
+              to: data.to,
+              message: data.message,
+              timestamp: moment().format()
+            });
+            receiverWs.send(cdata);
+            ws.send(cdata);
+
+            // Save message to database
+            const query = 'INSERT INTO messages (app_id, from_user, to_user, message, timestamp) VALUES (?, ?, ?, ?, ?)';
+            db.query(query, [data.app_id, data.from, data.to, data.message, moment().format()], (err, results) => {
+              if (err) {
+                console.error('Error saving message:', err);
+              }
+            });
+          } else {
+            console.log("No receiver user found.");
+            ws.send(JSON.stringify({ status: "error" }));
+          }
+        } else {
+          console.log("Invalid command");
+          ws.send(JSON.stringify({ status: "error" }));
+        }
+      } else {
+        console.log("App Authentication error");
+        ws.send(JSON.stringify({ status: "error" }));
+      }
+    } else {
+      console.log("Non JSON type data");
+      ws.send(JSON.stringify({ status: "error" }));
+    }
+  });
+
+  ws.on('close', () => {
+    delete webSockets[userID];
+    console.log(`User Disconnected: ${userID}`);
+  });
+
+  ws.send(JSON.stringify({ status: "connected" }));
+});
+
+
 
 const sendMessage = (app_id, from, to, message, callback) => {
   const query =
