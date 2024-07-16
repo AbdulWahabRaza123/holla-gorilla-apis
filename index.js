@@ -19,14 +19,14 @@ const io = socketIo(server, {
     methods: ['GET', 'POST']
   }
 });
-const wssPort = 6060;
-const wss = new WebSocket.Server({ port: wssPort, path: '/ws' });
+// Use the server option to use the same HTTP server for WebSocket
+const wss = new WebSocket.Server({ server, path: '/websocket' });
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // APP SETUP
-const port = 3000;
+const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
@@ -35,12 +35,29 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Serve Swagger UI
 app.use(
   "/api-docs",
-  express.static("node-modules/swagger-ui-dist/", { index: false }),
   swaggerUi.serve,
   swaggerUi.setup(specs)
 );
 
+// DB Connection
+db.connect((err) => {
+  if (err) {
+    console.error("Error connecting to MySQL:", err);
+    return;
+  }
+  console.log("Connected to MySQL");
 
+  db.query(setupQueries, (err, results) => {
+    if (err) {
+      console.error("Error setting up database:", err);
+      return;
+    }
+    console.log("Database setup complete");
+    server.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+  });
+});
 
 // WebSocket connection handler
 io.on("connection", (socket) => {
@@ -141,7 +158,6 @@ wss.on('connection', (ws, req) => {
   ws.send(JSON.stringify({ status: "connected" }));
 });
 
-
 const sendMessage = (app_id, from, to, message, callback) => {
   const query =
     "INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)";
@@ -156,7 +172,6 @@ const sendMessage = (app_id, from, to, message, callback) => {
     callback(null, newMessage);
   });
 };
-
 // Helper functions
 const {
   calculateDistance,
