@@ -20,6 +20,16 @@ const setupQueries = `
     subscription_expiry DATE
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  app_id VARCHAR(50) NOT NULL,
+  from_user INT NOT NULL,
+  to_user INT NOT NULL,
+  message TEXT NOT NULL,
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
   CREATE TABLE IF NOT EXISTS request(
     sender_id INT,
     receiver_id INT,
