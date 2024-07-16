@@ -15,7 +15,13 @@ const setupQueries = require("./components/queries");
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  path: '/socket.io', // Ensure this path matches the client's path
+  cors: {
+    origin: '*', // Allow all origins for simplicity. Adjust as needed.
+    methods: ['GET', 'POST']
+  }
+});
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
