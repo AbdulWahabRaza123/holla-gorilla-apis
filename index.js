@@ -9,7 +9,6 @@ const cors = require('cors');
 
 const { specs, swaggerUi } = require('./config/swagger');
 const db = require('./config/dbConnection');
-const setupQueries = require('./components/queries');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,8 +20,7 @@ const io = socketIo(server, {
   }
 });
 const wssPort = 6060;
-// const wss = new WebSocket.Server({ server, path: '/websocket', port: wssPort });
-const wss = new WebSocket.Server({ server, path: '/websocket' });
+const wss = new WebSocket.Server({ port: wssPort, path: '/ws' });
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -42,25 +40,7 @@ app.use(
   swaggerUi.setup(specs)
 );
 
-// DB Connection
-db.connect((err) => {
-  if (err) {
-    console.error("Error connecting to MySQL:", err);
-    return;
-  }
-  console.log("Connected to MySQL");
 
-  db.query(setupQueries, (err, results) => {
-    if (err) {
-      console.error("Error setting up database:", err);
-      return;
-    }
-    console.log("Database setup complete");
-    server.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    });
-  });
-});
 
 // WebSocket connection handler
 io.on("connection", (socket) => {
@@ -2386,3 +2366,8 @@ function addOneMonth(date) {
   result.setMonth(result.getMonth() + 1);
   return result;
 }
+
+
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
