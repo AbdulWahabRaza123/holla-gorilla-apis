@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const WebSocket = require('ws');
-
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -22,7 +21,7 @@ const io = socketIo(server, {
   }
 });
 const wssPort = 6060;
-const wss = new WebSocket.Server({ port: wssPort });
+const wss = new WebSocket.Server({ server, path: '/websocket', port: wssPort });
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -88,6 +87,7 @@ io.on("connection", (socket) => {
     });
   });
 });
+
 let webSockets = {};
 
 wss.on('connection', (ws, req) => {
@@ -161,8 +161,6 @@ wss.on('connection', (ws, req) => {
 });
 
 
-
-
 const sendMessage = (app_id, from, to, message, callback) => {
   const query =
     "INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)";
@@ -177,6 +175,7 @@ const sendMessage = (app_id, from, to, message, callback) => {
     callback(null, newMessage);
   });
 };
+
 // Helper functions
 const {
   calculateDistance,
