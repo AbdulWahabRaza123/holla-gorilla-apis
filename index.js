@@ -12,13 +12,13 @@ const db = require('./config/dbConnection');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-  path: '/socket.io',
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
+// `const io = socketIo(server, {
+//   path: '/socket.io',
+//   cors: {
+//     origin: '*',
+//     methods: ['GET', 'POST']
+//   }
+// });`
 // Use the server option to use the same HTTP server for WebSocket
 const wss = new WebSocket.Server({ server, path: '/websocket' });
 
@@ -39,52 +39,52 @@ app.use(
   swaggerUi.setup(specs)
 );
 
-// DB Connection
-db.connect((err) => {
-  if (err) {
-    console.error("Error connecting to MySQL:", err);
-    return;
-  }
-  console.log("Connected to MySQL");
+// // DB Connection
+// db.connect((err) => {
+//   if (err) {
+//     console.error("Error connecting to MySQL:", err);
+//     return;
+//   }
+//   console.log("Connected to MySQL");
 
-  db.query(setupQueries, (err, results) => {
-    if (err) {
-      console.error("Error setting up database:", err);
-      return;
-    }
-    console.log("Database setup complete");
-    server.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    });
-  });
-});
+//   db.query(setupQueries, (err, results) => {
+//     if (err) {
+//       console.error("Error setting up database:", err);
+//       return;
+//     }
+//     console.log("Database setup complete");
+//     server.listen(port, () => {
+//       console.log(`Server is running on port ${port}`);
+//     });
+//   });
+// });
 
 // WebSocket connection handler
-io.on("connection", (socket) => {
-  console.log("New client connected");
+// io.on("connection", (socket) => {
+//   console.log("New client connected");
 
-  // Event to join a room
-  socket.on("joinRoom", ({ room }) => {
-    socket.join(room);
-    console.log(`User joined room: ${room}`);
-    socket.emit("Joined");
-  });
+//   // Event to join a room
+//   socket.on("joinRoom", ({ room }) => {
+//     socket.join(room);
+//     console.log(`User joined room: ${room}`);
+//     socket.emit("Joined");
+//   });
 
-  socket.on("sendMessage", (data) => {
-    console.log("sendMessage event received:", data);
-    const { app_id, from, to, message } = data;
-    sendMessage(app_id, from, to, message, (err, newMessage) => {
-      if (err) {
-        console.log("Error sending message:", err);
-        socket.emit("messageError", "Error sending message");
-        return;
-      }
-      console.log("Message sent successfully:", newMessage);
-      io.to(`room_${from}`).emit("newMessage", newMessage);
-      io.to(`room_${to}`).emit("newMessage", newMessage);
-    });
-  });
-});
+//   socket.on("sendMessage", (data) => {
+//     console.log("sendMessage event received:", data);
+//     const { app_id, from, to, message } = data;
+//     sendMessage(app_id, from, to, message, (err, newMessage) => {
+//       if (err) {
+//         console.log("Error sending message:", err);
+//         socket.emit("messageError", "Error sending message");
+//         return;
+//       }
+//       console.log("Message sent successfully:", newMessage);
+//       io.to(`room_${from}`).emit("newMessage", newMessage);
+//       io.to(`room_${to}`).emit("newMessage", newMessage);
+//     });
+//   });
+// });
 
 let webSockets = {};
 
