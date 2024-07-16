@@ -85,9 +85,11 @@ const validateSignup = (req, res, next) => {
       .json({ status: false, message: "Education is required", user: null });
   next();
 };
+const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
-  const token = req.headers["authorization"];
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // Extract the token part
 
   if (token == null) {
     return res
@@ -104,6 +106,10 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+module.exports = authenticateToken;
+
+
 
 module.exports = {
   calculateDistance,
