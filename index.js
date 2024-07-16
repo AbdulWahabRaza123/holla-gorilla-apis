@@ -1,35 +1,26 @@
-require("dotenv").config();
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const cors = require('cors');
 
-const express = require("express");
-const bodyParser = require("body-parser");
-const http = require("http");
-const socketIo = require("socket.io");
-const jwt = require("jsonwebtoken");
-const multer = require("multer");
-const cors = require("cors"); // Import the CORS middleware
-
-const { specs, swaggerUi } = require("./config/swagger");
-
-const db = require("./config/dbConnection");
-const setupQueries = require("./components/queries");
+const { specs, swaggerUi } = require('./config/swagger');
+const db = require('./config/dbConnection');
+const setupQueries = require('./components/queries');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  path: '/socket.io', // Ensure this path matches the client's path
+  path: '/socket.io',
   cors: {
-    origin: '*', // Allow all origins for simplicity. Adjust as needed.
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-// APP SETUP
-const port = 3000;
-
-app.use(cors()); // Enable CORS for all routes
+app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -62,40 +53,6 @@ db.connect((err) => {
   });
 });
 
-// Helper functions
-const {
-  calculateDistance,
-  uploadToCloudinary,
-  validateSignup,
-  authenticateToken,
-} = require("./utils");
-const { machine } = require("os");
-
-// Message handling
-
-// const { app_id, from, to, message } = req.body;
-// // const query = `
-// // INSERT INTO messages
-// // (app_id,from_user,to_user,message) VALUES (?,?,?,?)
-// // `;
-// //let queryParams = [app_id,from,to,message];
-
-// Function to handle message sending
-const sendMessage = (app_id, from, to, message, callback) => {
-  const query =
-    "INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)";
-  db.query(query, [app_id, from, to, message], (err, results) => {
-    if (err) {
-      callback(err, null);
-      return;
-    }
-
-    const newMessage = { app_id, from, to, message };
-    io.emit("newMessage", newMessage);
-    callback(null, newMessage);
-  });
-};
-
 // WebSocket connection handler
 io.on("connection", (socket) => {
   console.log("New client connected");
@@ -122,6 +79,30 @@ io.on("connection", (socket) => {
     });
   });
 });
+
+const sendMessage = (app_id, from, to, message, callback) => {
+  const query =
+    "INSERT INTO messages (app_id, from_user, to_user, message) VALUES (?, ?, ?, ?)";
+  db.query(query, [app_id, from, to, message], (err, results) => {
+    if (err) {
+      callback(err, null);
+      return;
+    }
+
+    const newMessage = { app_id, from, to, message };
+    io.emit("newMessage", newMessage);
+    callback(null, newMessage);
+  });
+};
+// Helper functions
+const {
+  calculateDistance,
+  uploadToCloudinary,
+  validateSignup,
+  authenticateToken,
+} = require("./utils");
+const { machine } = require("os");
+
 
 
 
