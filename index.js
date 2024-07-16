@@ -19,7 +19,11 @@ const io = socketIo(server, {
     methods: ['GET', 'POST']
   }
 });
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
+// APP SETUP
+const port = 3000;
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
