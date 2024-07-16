@@ -108,6 +108,8 @@ io.on("connection", (socket) => {
         socket.emit("messageError", "Error sending message");
         return;
       }
+     io.to(`room_${from}`).emit("newMessage", newMessage);
+     io.to(`room_${to}`).emit("newMessage", newMessage);
     });
   });
 
