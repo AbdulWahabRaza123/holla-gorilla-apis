@@ -85,7 +85,6 @@ const validateSignup = (req, res, next) => {
       .json({ status: false, message: "Education is required", user: null });
   next();
 };
-const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
