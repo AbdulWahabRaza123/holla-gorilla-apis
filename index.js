@@ -21,7 +21,8 @@ const io = socketIo(server, {
     methods: ['GET', 'POST']
   }
 });
-const wss = new WebSocket.Server({ server, path: '/ws' });
+const wssPort = 6060;
+const wss = new WebSocket.Server({ port: wssPort });
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
@@ -158,6 +159,7 @@ wss.on('connection', (ws, req) => {
 
   ws.send(JSON.stringify({ status: "connected" }));
 });
+
 
 
 
